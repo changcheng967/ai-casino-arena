@@ -7,3 +7,5 @@ data/dev_store.json.bak
 data/probe_out*.txt
 *.log
 .zcode/
+.vercel/
+tsconfig.tsbuildinfo
