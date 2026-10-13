@@ -1,0 +1,162 @@
+@import "tailwindcss";
+
+@theme {
+  --color-ink: #06080a;
+  --color-felt-900: #0a1f16;
+  --color-felt-800: #0d2a1d;
+  --color-felt-700: #11362a;
+  --color-gold-300: #f0d98c;
+  --color-gold-400: #e3c46a;
+  --color-gold-500: #d4af37;
+  --color-gold-700: #8a6f1f;
+  --color-cream: #efe6d0;
+  --color-cream-dim: #b9ae95;
+  --color-neon: #3dffa0;
+  --color-danger: #ff5d6e;
+  --color-talk: #ffb45e;
+
+  --font-display: var(--font-bodoni), "Georgia", serif;
+  --font-body: var(--font-instrument), system-ui, sans-serif;
+  --font-mono: var(--font-plex), ui-monospace, monospace;
+}
+
+html {
+  background: var(--color-ink);
+  color: var(--color-cream);
+}
+
+body {
+  font-family: var(--font-body);
+  background:
+    radial-gradient(1200px 600px at 50% -10%, rgba(212, 175, 55, 0.08), transparent 60%),
+    radial-gradient(900px 500px at 85% 110%, rgba(17, 54, 42, 0.55), transparent 60%),
+    var(--color-ink);
+  min-height: 100vh;
+}
+
+/* film grain over everything, very subtle */
+.grain::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 50;
+  opacity: 0.05;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/%3E%3C/filter%3E%3Crect width='160' height='160' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+
+.gold-text {
+  background: linear-gradient(160deg, #f6e7ae 15%, #d4af37 45%, #9a7b22 70%, #f0d98c 90%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+.hairline {
+  border: 1px solid rgba(212, 175, 55, 0.28);
+}
+
+.panel {
+  background: linear-gradient(180deg, rgba(13, 42, 29, 0.55), rgba(6, 8, 10, 0.85));
+  border: 1px solid rgba(212, 175, 55, 0.22);
+  box-shadow:
+    inset 0 1px 0 rgba(240, 217, 140, 0.08),
+    0 10px 40px rgba(0, 0, 0, 0.5);
+}
+
+.felt-table {
+  background:
+    radial-gradient(ellipse at 50% 42%, #1a4a35 0%, #11362a 45%, #0a1f16 78%);
+  border: 3px solid #6b5417;
+  box-shadow:
+    inset 0 0 60px rgba(0, 0, 0, 0.55),
+    0 0 0 6px #2a2113,
+    0 0 0 7px rgba(212, 175, 55, 0.5),
+    0 24px 60px rgba(0, 0, 0, 0.6);
+}
+
+.poker-card {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  width: 2.35rem;
+  height: 3.3rem;
+  border-radius: 5px;
+  background: linear-gradient(170deg, #fbf6e9, #e8dfc8);
+  color: #10130f;
+  font-family: var(--font-mono);
+  font-weight: 700;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.5), inset 0 0 0 1px rgba(0, 0, 0, 0.08);
+}
+.poker-card .red {
+  color: #c8102e;
+}
+.poker-card.small {
+  width: 1.9rem;
+  height: 2.7rem;
+  font-size: 0.8em;
+}
+.card-back {
+  background:
+    repeating-linear-gradient(45deg, #7c1d2a 0 4px, #5d1520 4px 8px),
+    #5d1520;
+  border: 2px solid #efe6d0;
+}
+
+@keyframes thinkpulse {
+  0%,
+  100% {
+    opacity: 0.35;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+.thinking {
+  animation: thinkpulse 1.1s ease-in-out infinite;
+}
+
+@keyframes marquee {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(-50%);
+  }
+}
+.marquee-track {
+  display: inline-flex;
+  animation: marquee 40s linear infinite;
+}
+
+@keyframes dealin {
+  from {
+    transform: translateY(-14px) rotate(-6deg);
+    opacity: 0;
+  }
+  to {
+    transform: none;
+    opacity: 1;
+  }
+}
+.deal-in {
+  animation: dealin 0.35s ease-out both;
+}
+
+.rank-chip {
+  font-family: var(--font-display);
+  font-style: italic;
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-thumb {
+  background: #2a3a2f;
+  border-radius: 6px;
+}
+::-webkit-scrollbar-track {
+  background: #0a0d0b;
+}

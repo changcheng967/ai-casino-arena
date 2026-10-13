@@ -1,0 +1,9 @@
+node_modules/
+.next/
+.env.local
+.env
+data/dev_store.json
+data/dev_store.json.bak
+data/probe_out*.txt
+*.log
+.zcode/
