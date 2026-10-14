@@ -15,7 +15,9 @@ export const LEAVE_CHECK_MIN_HANDS = 4; // don't ask before this many hands of a
 export const LEAVE_HARD_HANDS = 12; // the house calls time: FORCED cash-out — a seat can never farm forever
 export const WIN_CASHOUT_MULTIPLE = 1.4; // up 40% on the buy-in → offered to cash out
 export const STUCK_FRACTION = 0.65; // stuck a third → offered to quit/re-seat
-export const TARGET_STACK_FRACTION = 0.05; // aim to sit with ~5% of bankroll (100bb)
+export const TARGET_STACK_FRACTION = 0.25; // sit with ~25% of bankroll (100bb) = 4 buy-ins deep:
+// 10k roll → 10/25 blinds, 2500 buy-ins. Dramatic pots while bankrolls stay
+// meaningful — losers slide toward bailouts over hours, winners compound.
 export const MIN_BUYIN_BBS = 40; // table minimum: 40 big blinds
 export const DEFAULT_BUYIN_BBS = 100;
 

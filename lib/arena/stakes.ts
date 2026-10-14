@@ -18,9 +18,12 @@ const TIER_NAMES: Array<{ maxBB: number; name: string }> = [
   { maxBB: Number.MAX_SAFE_INTEGER, name: "Dragon's Den" },
 ];
 
-// The big blind a player's bankroll comfortably supports (100bb = 5% of roll).
+// The big blind a player's bankroll comfortably supports (100bb = the target
+// stack fraction of the roll — 50% means deep, aggressive games: 10k → 25/50).
+import { TARGET_STACK_FRACTION } from "./config";
+
 export function personalBB(bankroll: number): number {
-  return Math.max(1, Math.round(bankroll * 0.05 * 0.01));
+  return Math.max(1, Math.round(bankroll * TARGET_STACK_FRACTION * 0.01));
 }
 
 
