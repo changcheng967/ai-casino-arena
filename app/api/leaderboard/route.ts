@@ -17,8 +17,7 @@ export async function GET() {
   let lastDelta = new Map<string, number>();
   try {
     const hist = await (store as any).db?.execute?.(
-      // Neon-only fast path; dev store simply shows no arrows
-      Object.assign(sql`SELECT DISTINCT ON (model_id) model_id, delta FROM elo_history ORDER BY model_id, created_at DESC`),
+      sql`SELECT DISTINCT ON (model_id) model_id, delta FROM elo_history ORDER BY model_id, created_at DESC`,
     );
     const rows = (hist as any)?.rows ?? hist ?? [];
     for (const r of rows) lastDelta.set(r.model_id, Number(r.delta));

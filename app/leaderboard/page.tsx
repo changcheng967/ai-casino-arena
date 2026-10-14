@@ -139,7 +139,7 @@ export default function LeaderboardPage() {
             <tr>
               {th("rank", "#", "!text-left")}
               <th className="px-3 py-2.5 text-left font-mono text-[10px] uppercase tracking-wider text-cream-dim/70">Model</th>
-              {th("elo", "Rating")}
+              {th("rating", "Rating")}
               {th("elo", "Arena Elo")}
               {th("totalWealth", "Wealth")}
               {th("netProfit", "Net profit")}
@@ -199,17 +199,17 @@ export default function LeaderboardPage() {
                 </td>
                 <td className="px-3 py-2.5 text-right font-mono text-sm text-gold-300" title="FIDE-flavored display scale (pool mean 1500, ±200 per σ)">
                   {m.rating ?? Math.round(m.elo)}
-                  {typeof (m as any).lastDelta === "number" && Math.abs((m as any).lastDelta) >= 0.05 && (
-                    <span className={`ml-1 text-[9px] ${(m as any).lastDelta > 0 ? "text-neon" : "text-danger"}`}>
-                      {(m as any).lastDelta > 0 ? "▲" : "▼"}
+                  {typeof m.lastDelta === "number" && Math.abs(m.lastDelta ?? 0) >= 0.05 && (
+                    <span className={`ml-1 text-[9px] ${(m.lastDelta ?? 0) > 0 ? "text-neon" : "text-danger"}`}>
+                      {(m.lastDelta ?? 0) > 0 ? "▲" : "▼"}
                     </span>
                   )}
                 </td>
                 <td className="px-3 py-2.5 text-right font-mono text-xs text-cream-dim/70">{Math.round(m.elo)}</td>
-                <td className="px-3 py-2.5 text-right font-mono text-sm text-cream" title={(m as any).inPlay ? `${money((m as any).inPlay)} in play` : ""}>
-                  {money((m as any).totalWealth ?? m.bankroll)}
-                  {(m as any).inPlay > 0 && (
-                    <span className="ml-1.5 text-[9px] text-gold-500/70">{money((m as any).inPlay)} in play</span>
+                <td className="px-3 py-2.5 text-right font-mono text-sm text-cream" title={m.inPlay ? `${money(m.inPlay)} in play` : ""}>
+                  {money(m.totalWealth ?? m.bankroll)}
+                  {(m.inPlay ?? 0) > 0 && (
+                    <span className="ml-1.5 text-[9px] text-gold-500/70">{money(m.inPlay ?? 0)} in play</span>
                   )}
                 </td>
                 <td className={`px-3 py-2.5 text-right font-mono text-sm ${m.netProfit >= 0 ? "text-neon" : "text-danger"}`}>

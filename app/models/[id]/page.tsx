@@ -89,7 +89,7 @@ function Sparkline({
             <stop offset="100%" stopColor={line} stopOpacity="0" />
           </linearGradient>
         </defs>
-        <line x1={padX} y1={y(1200)} x2={w - padX} y2={y(1200)} stroke="#8a6f1f" strokeWidth="1" strokeDasharray="4 5" opacity="0.5" />
+        <line x1={padX} y1={y(1500)} x2={w - padX} y2={y(1500)} stroke="#8a6f1f" strokeWidth="1" strokeDasharray="4 5" opacity="0.5" />
         <polygon points={`${padX},${h - 2} L ${path} L ${w - padX},${h - 2}`} fill="url(#fillg)" stroke="none" />
         <path d={`M ${path}`} fill="none" stroke={line} strokeWidth="2.2" strokeLinejoin="round" strokeLinecap="round" />
         {hover !== null && (

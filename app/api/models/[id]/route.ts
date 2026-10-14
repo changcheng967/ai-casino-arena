@@ -35,7 +35,12 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ id: string 
     eloHistory: eloHistory.reverse(),
     handsCount: hands.length,
     sessions: sessions
-      .map((s) => ({ ...s, roomName: roomBySession.get(s.id) ?? `${s.tierName} · $${s.sb}/$${s.bb}`, seats: s.seats.filter((x) => x.modelId === decoded) }))
+      .map((s) => ({
+        ...s,
+        live: !s.endedAt,
+        roomName: roomBySession.get(s.id) ?? `${s.tierName}`,
+        seats: s.seats.filter((x) => x.modelId === decoded),
+      }))
       .filter((s) => s.seats.length > 0)
       .slice(0, 20),
   });

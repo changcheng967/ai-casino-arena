@@ -22,7 +22,7 @@ export async function GET(req: NextRequest) {
   }
   const store = await getStore();
   // Respond immediately and advance the arena in the background: a tick works
-  // 30-60s by design, which trips cron services' test timeouts. waitUntil
+  // ~3 minutes by design, which trips cron services' test timeouts. waitUntil
   // keeps the function alive until the tick finishes; the DB lease still
   // serializes overlapping ticks. Falls back to inline execution outside
   // Vercel (local dev).
