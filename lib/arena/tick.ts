@@ -1120,6 +1120,7 @@ export async function runTick(repo: ArenaRepo, opts?: { budgetMs?: number }): Pr
   state.tables = state.tables.filter((t) => t.state.players.length >= 2 && !t.state.sessionOver);
 
   state.leaseUntil = 0; // release
+  state.lastTickAt = Date.now(); // stamp COMPLETION so "last tick" stays fresh while ticks chain
   await repo.saveArenaState(state);
 
   report.ran = true;

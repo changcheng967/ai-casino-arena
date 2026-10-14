@@ -39,10 +39,11 @@ function normalCdf(z: number): number {
 }
 
 // Edge prior: typical per-hand bb edges in this pool. Sane LLMs run 0.2–1bb/h;
-// degenerate strategies (fold-bots, shove-bots) reach 10–20bb/h. A prior std
-// of 3bb/h balances both → h0 = 2·(σ/τ0)² = 72 common hands to half-unshrink
-// (~6 shared stints), matching poker's information physics.
-export const EDGE_PRIOR_TAU = 3;
+// degenerate strategies (fold-bots, shove-bots) reach 10–20bb/h. τ0=6 widens
+// the prior so evidence weighs ~4× earlier (h0 = 2·(σ/τ0)² = 18 common hands
+// to half-unshrink) — livelier early movement while keeping the fixed-point
+// guarantee and exact zero-sum. Raise toward 9 for even faster response.
+export const EDGE_PRIOR_TAU = 6;
 
 /**
  * Confidence score that `a` is genuinely outperforming `b`, in [0.5, 1) side.
@@ -138,7 +139,7 @@ export function poolStats(models: Array<{ elo: number }>): { mean: number; sd: n
   if (models.length === 0) return { mean: 1200, sd: 1 };
   const mean = models.reduce((a, m) => a + m.elo, 0) / models.length;
   const variance = models.reduce((a, m) => a + (m.elo - mean) ** 2, 0) / models.length;
-  // σ floor 25: at season start everyone is 1200 — without a floor one +1 elo
-  // win would swing the display scale absurdly. 25bb ≈ one real session spread.
-  return { mean, sd: Math.max(25, Math.sqrt(variance)) };
+  // σ floor 15: stretches honest small gaps on the display scale without
+  // letting a single +1 elo win explode it at season start.
+  return { mean, sd: Math.max(15, Math.sqrt(variance)) };
 }

@@ -88,6 +88,8 @@ export async function GET(req: Request) {
     })(),
     lobbyNotes: state?.lobbyNotes ?? [],
     lastTickAt: state?.lastTickAt ?? null,
+    // a tick is actively working right now (lease held)
+    ticking: (state?.leaseUntil ?? 0) > Date.now(),
     totalHandsEver: state?.totalHandsEver ?? 0,
     devTick: process.env.NODE_ENV !== "production",
   });
