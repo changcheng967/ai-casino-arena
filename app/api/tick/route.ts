@@ -10,6 +10,8 @@ export async function GET(req: NextRequest) {
   const secret = process.env.CRON_SECRET;
   const provided =
     req.headers.get("x-cron-secret") ??
+    // Vercel Cron sends: Authorization: Bearer <CRON_SECRET>
+    req.headers.get("authorization")?.replace(/^Bearer\s+/i, "") ??
     req.nextUrl.searchParams.get("t") ??
     "";
   // Local dev (next dev) allows unauthenticated ticks so the browser can drive
