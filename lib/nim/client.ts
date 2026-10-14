@@ -19,12 +19,6 @@ const KEY_ENV: Record<Provider, string> = {
   ollama: "OLLAMA_API_KEY",
 };
 
-export function providerForModel(id: string): Provider {
-  if (id.startsWith("groq/")) return "groq";
-  if (id.startsWith("agnes/")) return "agnes";
-  return "nim";
-}
-
 export type NimErrorKind = "timeout" | "http" | "network" | "invalid";
 
 export class NimError extends Error {
@@ -107,7 +101,12 @@ export async function nimChat(opts: NimChatOptions): Promise<NimChatResult> {
 
       if (!res.ok) {
         const retryAfter = res.headers.get("retry-after");
-        const retryAfterMs = retryAfter ? parseFloat(retryAfter) * 1000 : undefined;
+        const parsedRetryMs = retryAfter ? parseFloat(retryAfter) * 1000 : undefined;
+        // HTTP-date or garbage retry-after parses to NaN; huge values would
+        // hang the caller — clamp to [0, 5s]
+        const retryAfterMs = Number.isFinite(parsedRetryMs)
+          ? Math.min(5_000, Math.max(0, parsedRetryMs as number))
+          : undefined;
         const errText = await res.text().catch(() => "");
         const err = new NimError(
           "http",

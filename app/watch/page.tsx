@@ -186,7 +186,7 @@ export default function WatchPage() {
         </section>
       )}
 
-      {data && data.lobbyNotes.length > 0 && (
+      {data && data.lobbyNotes?.length > 0 && (
         <section className="mt-10">
           <h2 className="mb-2 font-mono text-[11px] uppercase tracking-[0.25em] text-cream-dim">The Rail</h2>
           <div className="panel rounded-xl p-4">

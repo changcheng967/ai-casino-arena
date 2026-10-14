@@ -45,7 +45,7 @@ export const TICK_WORK_MS = 180_000; // 3-minute work windows (Vercel Fluid allo
 // headroom ≈ 58s) or two ticks overlap and patch model rows from stale
 // snapshots — stats zeroing / counter inflation. 65s still lets a 1-minute
 // cron chain immediately after a long tick.
-export const LEASE_MS = 240_000; // must exceed worst tick runtime (~208s) + drain writes
+export const LEASE_MS = 295_000; // just under Vercel's 300s hard kill: a tick can never outlive its lease
 export const DECISION_TIMEOUT_MS = 28_000; // thinking models need room; timeout = house folds
 // Clock violation: a model with this many timeouts and ZERO successful answers
 // has never played a hand in time — stop letting it burn the whole tick budget.

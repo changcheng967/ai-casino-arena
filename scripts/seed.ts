@@ -71,7 +71,12 @@ async function main() {
   const keep = rows.filter((r) => r.status === "active");
   await store.upsertModels(keep);
   const keepIds = new Set(keep.map((r) => r.id));
-  const deadIds = (await store.listModels()).filter((m) => !keepIds.has(m.id)).map((m) => m.id);
+  const rosterProviders = new Set(rows.map((r) => r.provider));
+  // never prune a model whose provider is entirely absent from the roster —
+  // that means the provider's catalog fetch failed, not that the model died
+  const deadIds = (await store.listModels())
+    .filter((m) => !keepIds.has(m.id) && rosterProviders.has(m.provider))
+    .map((m) => m.id);
   let pruned = 0;
   if (deadIds.length > 0) pruned = await store.deleteModels(deadIds);
   console.log(`Seeded ${keep.length} active players (pruned ${pruned} dead models).`);

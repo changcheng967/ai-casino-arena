@@ -170,7 +170,7 @@ async function askBuyIn(
     const parsed = extractJson(res.text);
     const n = typeof parsed?.buyin === "number" ? Math.round(parsed.buyin) : NaN;
     if (!Number.isFinite(n)) return { buyIn: Math.min(model.bankroll, Math.max(minBuyIn, target)), responded: true };
-    return { buyIn: Math.max(minBuyIn, Math.min(n, model.bankroll)), responded: true };
+    return { buyIn: Math.min(Math.max(minBuyIn, n), model.bankroll), responded: true }; // bankroll is the hard cap — never mint
   } catch {
     return { buyIn: Math.min(model.bankroll, Math.max(minBuyIn, DEFAULT_BUYIN_BBS * bb)), responded: false };
   }
@@ -335,11 +335,17 @@ function statsFromHand(live: LiveTable): Map<string, StatDelta> {
   const dealt = new Set(st.players.filter((p) => p.holeCards.length === 2).map((p) => p.id));
   for (const id of dealt) bump(id, (d) => void (d.handsPlayed += 1));
 
+  const vpipSeen = new Set<string>();
+  const pfrSeen = new Set<string>();
   for (const a of st.actionLog) {
     if (!a.playerId) continue;
     const voluntary = (a.type === "call" || a.type === "raise" || a.type === "bet" || a.type === "allin") && a.street === "preflop";
-    if (voluntary) bump(a.playerId, (d) => void (d.vpip += 1));
-    if (a.street === "preflop" && (a.type === "raise" || a.type === "bet" || a.type === "allin")) {
+    if (voluntary && !vpipSeen.has(a.playerId)) {
+      vpipSeen.add(a.playerId);
+      bump(a.playerId, (d) => void (d.vpip += 1));
+    }
+    if (a.street === "preflop" && (a.type === "raise" || a.type === "bet" || a.type === "allin") && !pfrSeen.has(a.playerId)) {
+      pfrSeen.add(a.playerId);
       bump(a.playerId, (d) => void (d.pfr += 1));
     }
     if (a.type === "raise" || a.type === "bet" || a.type === "allin") {
@@ -619,6 +625,18 @@ async function rotateTable(
     }
   }
 
+  // close check BEFORE refills: a sessionOver/capped table must not recruit
+  // players it's about to cash out (phantom sessions + wasted buy-in calls)
+  if (st.players.length <= 1 || st.sessionOver) {
+    while (st.players.length > 0) {
+      await cashOutPlayer(repo, modelMap, state, live, 0);
+      report.playersLeft++;
+    }
+    await syncSessionRow(repo, live, true);
+    report.tablesClosed++;
+    return false;
+  }
+
   // 3) refill open seats from the lobby — FILL THE TABLE.
   await refillSeats(repo, modelMap, state, live, refillGateDeadline(deadline, tickStartedAt), report);
 
@@ -821,8 +839,12 @@ export async function runTick(repo: ArenaRepo, opts?: { budgetMs?: number }): Pr
   state.tables = stillLive;
 
   // ---- form new tables from the unseated pool (at most one per tick, time-gated) ----
-  const activeUnseated = () =>
-    [...modelMap.values()].filter((m) => m.status === "active" && m.chatCapable && !seatedIds.has(m.id));
+  // recompute from live tables each call — a stale snapshot let formation
+  // double-seat models that refill passes had just seated
+  const activeUnseated = () => {
+    const seatedNow = new Set(state.tables.flatMap((tb) => tb.state.players.map((pl) => pl.id)));
+    return [...modelMap.values()].filter((m) => m.status === "active" && m.chatCapable && !seatedNow.has(m.id));
+  };
   // Capacity is for ALL active players (seated + waiting), not just the queue —
   // the old queue-only formula made a full arena unable to grow, stranding idle
   // models in the lobby forever.
@@ -861,9 +883,12 @@ export async function runTick(repo: ArenaRepo, opts?: { budgetMs?: number }): Pr
   // players into every table with open seats. Tables must never sit short
   // while the lobby has players — this pass runs early every tick so seats
   // open and fill within one heartbeat even when decisions eat the budget. ----
+  // gate capped at 90s from tick start: buy-in asks must never consume the
+  // whole 3-minute budget and starve actual play
+  const fillGate = startedAt + Math.min(90_000, (opts?.budgetMs ?? TICK_WORK_MS) / 2);
   for (const live of state.tables) {
     if (live.state.players.length < TABLE_SIZE && live.state.players.length >= 1) {
-      await refillSeats(repo, modelMap, state, live, startedAt + (opts?.budgetMs ?? TICK_WORK_MS) - 6_000, report);
+      await refillSeats(repo, modelMap, state, live, fillGate, report);
     }
   }
 
@@ -1085,7 +1110,7 @@ export async function runTick(repo: ArenaRepo, opts?: { budgetMs?: number }): Pr
           const outage = !out.ok && isTimeout;
           const fails = outage ? (m.consecutiveFailures ?? 0) + 1 : 0;
           const wentQuarantined =
-            outage && fails >= QUARANTINE_THRESHOLD && m.status === "active";
+  outage && fails >= QUARANTINE_THRESHOLD && (m.status === "active" || !live.state.players[la.seat]?.disconnected);
           if (wentQuarantined) {
             await repo.patchModel(me.id, {
               status: "quarantined",
@@ -1111,7 +1136,7 @@ export async function runTick(repo: ArenaRepo, opts?: { budgetMs?: number }): Pr
             // destroy them. Sit them OUT (engine stops asking, betting
             // completes around them) and cash out at the next hand boundary
             // where awards have legally settled.
-            live.state.players[la.seat].satOut = true;
+            live.state.players[la.seat].disconnected = true;
             live.pendingQuarantine = [...(live.pendingQuarantine ?? []), me.id];
           } else {
             await repo.patchModel(me.id, {

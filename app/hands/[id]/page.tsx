@@ -106,10 +106,15 @@ export default function HandReplayPage({ params }: { params: Promise<{ id: strin
         players.set(a.playerId, p);
       }
     }
+    // uncalled-bet return: finishHand refunds the top committer's excess
+    // over the second-largest commitment (folded or not) — subtract it at the
+    // final step or the replayed pot overshoots the recorded one
+    const puts = [...players.values()].map((pl) => pl.put).sort((a, b) => b - a);
+    const uncalled = h.showdown && puts.length >= 2 ? Math.max(0, puts[0] - puts[1]) : 0;
     // real board for revealed streets
     const boardReal =
       board.length === 0 ? [] : board.length >= 3 ? h.board.slice(0, Math.min(5, board.length)) : h.board.slice(0, board.length);
-    return { players, board: boardReal, potTotal, notes, street: visible.at(-1)?.street ?? "preflop" };
+    return { players, board: boardReal, potTotal, uncalled, notes, street: visible.at(-1)?.street ?? "preflop" };
   }, [h, visible]);
 
   if (err) return <main className="mx-auto max-w-3xl px-4 py-20 text-center font-mono text-sm text-danger">hand not found</main>;
@@ -149,7 +154,9 @@ export default function HandReplayPage({ params }: { params: Promise<{ id: strin
               })}
             </div>
           </div>
-          <div className="font-display text-lg font-bold text-gold-300">pot {money(snapshot.potTotal)}</div>
+          <div className="font-display text-lg font-bold text-gold-300">
+            pot {money(step >= h.actions.length ? snapshot.potTotal - snapshot.uncalled : snapshot.potTotal)}
+          </div>
         </div>
 
         <div className="mt-5 flex items-center gap-3">
@@ -235,12 +242,18 @@ export default function HandReplayPage({ params }: { params: Promise<{ id: strin
                 <div key={i}>
                   {a.winners.map((w) => displayName(w)).join(", ")} +{money(a.amount)}
                   {a.handName ? ` — ${a.handName}` : ""}
-                  {a.winners.length === 1 && (
-                    <span className="ml-2 text-neon">
-                      net {share >= (snapshot.players.get(a.winners[0])?.put ?? 0) ? "+" : "−"}
-                      {money(Math.abs(share - (snapshot.players.get(a.winners[0])?.put ?? 0)))}
-                    </span>
-                  )}
+                  {a.winners.length === 1 && (() => {
+                    const put = snapshot.players.get(a.winners[0])?.put ?? 0;
+                    const puts = [...snapshot.players.values()].map((pl) => pl.put).sort((x, y) => y - x);
+                    const isTop = put === puts[0];
+                    const net = share + (isTop ? snapshot.uncalled : 0) - put;
+                    return (
+                      <span className="ml-2 text-neon">
+                        net {net >= 0 ? "+" : "−"}
+                        {money(Math.abs(net))}
+                      </span>
+                    );
+                  })()}
                 </div>
               );
             })}

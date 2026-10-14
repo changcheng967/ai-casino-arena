@@ -17,6 +17,7 @@ export interface PlayerState {
   committedThisHand: number; // total chips put in across streets (side pots)
   hasActedSinceFullRaise: boolean;
   satOut: boolean; // busted from the table (stack 0 and left)
+  disconnected?: boolean; // provider outage mid-hand: can't act, but cards/chips stay live for showdown
   lastAction?: string; // display hint for the UI
 }
 
@@ -100,15 +101,17 @@ export function activePlayers(t: TableState): PlayerState[] {
 }
 
 function inHand(t: TableState): PlayerState[] {
+  // disconnected (mid-hand provider outage) players REMAIN contenders: their
+  // committed chips are live and their cards go to showdown, like all-ins
   return t.players.filter((p) => !p.satOut && p.holeCards.length === 2 && !p.folded);
 }
 
 function canAct(p: PlayerState): boolean {
-  return !p.satOut && !p.folded && !p.allIn;
+  return !p.satOut && !p.folded && !p.allIn && !p.disconnected;
 }
 
 function bettingComplete(t: TableState): boolean {
-  const actors = t.players.filter((p) => !p.satOut && !p.folded && p.holeCards.length === 2);
+  const actors = t.players.filter((p) => !p.satOut && !p.disconnected && !p.folded && p.holeCards.length === 2);
   const live = actors.filter(canAct);
   if (live.length === 0) return true;
   if (live.length === 1 && actors.length > 1) {
@@ -128,7 +131,7 @@ function advanceStreet(t: TableState): void {
   t.lastRaiseIncrement = t.bigBlind;
   t.minRaiseTo = t.bigBlind;
 
-  const live = t.players.filter((p) => !p.satOut && !p.folded && p.holeCards.length === 2);
+  const live = t.players.filter((p) => !p.satOut && !p.disconnected && !p.folded && p.holeCards.length === 2);
   if (live.length <= 1) {
     finishHand(t);
     return;
@@ -245,6 +248,8 @@ function post(t: TableState, seat: number, amount: number, label: string): void 
 export function startHand(t0: TableState): TableState {
   const t = clone(t0);
   const seated = t.players.filter((p) => !p.satOut && p.stack > 0);
+  // a disconnected seat only persists within the hand — the tick's rotation
+  // cashes them out at the boundary, so startHand never sees them
   if (seated.length < 2 || t.sessionOver) {
     t.awaitingDecision = false;
     t.sessionOver = true;
@@ -277,7 +282,7 @@ export function startHand(t0: TableState): TableState {
   // deal 2 cards to each stack-holding seated player
   for (let round = 0; round < 2; round++) {
     for (const p of t.players) {
-      if (!p.satOut && p.stack > 0) p.holeCards.push(t.deck.pop()!);
+      if (!p.satOut && !p.disconnected && p.stack > 0) p.holeCards.push(t.deck.pop()!);
     }
   }
 
@@ -504,6 +509,20 @@ function finishHand(t: TableState): void {
     }
     for (const a of awards) {
       t.actionLog.push({ street: "payout", seat: -1, playerId: a.winners[0], type: "win", amount: a.amount, note: a.handName });
+    }
+    // SELF-HEAL: the level walk must distribute the entire pot. Any residue
+    // (possible when commitments exist above the top contender level after
+    // the uncalled return — e.g. multiple disconnected players) is returned
+    // to the highest committer rather than destroyed. Conservation over
+    // elegance: chips are never deleted.
+    const awarded = awards.reduce((x, a) => x + a.amount, 0);
+    if (t.pot - awarded > 0) {
+      const residue = t.pot - awarded;
+      const topCommitter = [...t.players].sort((a, b) => b.committedThisHand - a.committedThisHand)[0];
+      if (topCommitter) {
+        topCommitter.stack += residue;
+        t.actionLog.push({ street: "payout", seat: -1, playerId: topCommitter.id, type: "win", amount: residue, note: "uncalled residue returned" });
+      }
     }
     t.pot = 0;
   }

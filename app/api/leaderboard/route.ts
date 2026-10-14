@@ -9,7 +9,13 @@ export const dynamic = "force-dynamic";
 export async function GET() {
   const store = await getStore();
   const models = await store.listModels();
-  const sorted = [...models].sort((a, b) => b.elo - a.elo);
+  const activesFirst = [...models].sort((a, b) => {
+    const aa = a.status === "active" || a.status === "quarantined" ? 0 : 1;
+    const ba = b.status === "active" || b.status === "quarantined" ? 0 : 1;
+    if (aa !== ba) return aa - ba;
+    return b.elo - a.elo;
+  });
+  const sorted = activesFirst;
   // fair wealth: seated players' chips on the felt count too, otherwise a
   // model deep in a winning session looks poorer than a lobby idler
   const state = await store.getArenaState();
@@ -27,7 +33,7 @@ export async function GET() {
   const inPlay = new Map<string, number>();
   for (const tb of state?.tables ?? []) {
     for (const pl of tb.state.players) {
-      inPlay.set(pl.id, (inPlay.get(pl.id) ?? 0) + Math.max(0, pl.stack) + pl.betThisStreet);
+      inPlay.set(pl.id, (inPlay.get(pl.id) ?? 0) + Math.max(0, pl.stack) + (pl.committedThisHand || pl.betThisStreet));
     }
   }
   const { mean, sd } = poolStats(sorted.filter((m) => m.status === "active"));

@@ -33,7 +33,7 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ id: string 
     vpip: m.handsPlayed > 0 ? Math.round((m.vpipHands / m.handsPlayed) * 1000) / 10 : null,
     pfr: m.handsPlayed > 0 ? Math.round((m.pfrHands / m.handsPlayed) * 1000) / 10 : null,
     eloHistory: eloHistory.reverse(),
-    handsCount: hands.length,
+    handsCount: 0,
     sessions: sessions
       .map((s) => {
         const seats = [...s.seats].sort((a, b) => (b.netDollars ?? 0) - (a.netDollars ?? 0));

@@ -76,6 +76,7 @@ async function pool<T, R>(items: T[], n: number, fn: (t: T) => Promise<R>): Prom
 
 async function main() {
   const outPath = join(process.cwd(), "data", "roster.json");
+  const listFailed: string[] = []; // providers whose catalog fetch failed — seed must NOT prune them
   mkdirSync(join(process.cwd(), "data"), { recursive: true });
 
   // ---- NIM ----
@@ -85,6 +86,7 @@ async function main() {
     console.log(`NIM: fetched ${nimIds.length} models`);
   } catch (e) {
     console.error("NIM list failed:", e);
+    listFailed.push("nim");
   }
   const nimResults = await pool(nimIds, 6, (id) => probeOne("nim", id));
   let i = 0;
@@ -100,6 +102,7 @@ async function main() {
     console.log(`\nGroq: fetched ${groqIds.length} chat candidates`);
   } catch (e) {
     console.error("Groq list failed:", e);
+    listFailed.push("groq");
   }
   const groqResults = await pool(groqIds, 4, (id) => probeOne("groq", id));
   i = 0;
@@ -117,6 +120,7 @@ async function main() {
     console.log(`\nAgnes: fetched ${agnesIds.length} chat candidates`);
   } catch (e) {
     console.error("Agnes list failed:", e);
+    listFailed.push("agnes");
   }
   const agnesResults = await pool(agnesIds, 2, (id) => probeOne("agnes", id));
   i = 0;
@@ -132,6 +136,7 @@ async function main() {
     console.log(`\nCline: fetched ${clineIds.length} :free-tagged chat candidates`);
   } catch (e) {
     console.error("Cline list failed:", e);
+    listFailed.push("cline");
   }
   // same model, different catalog naming across providers → canonical NIM id
   const CLINE_ALIASES: Record<string, string> = {
@@ -178,6 +183,14 @@ async function main() {
   const results: ProbeResult[] = [...nimResults, ...groqResults, ...agnesResults, ...clineResults, ...ollamaResults];
 
   results.sort((a, b) => a.id.localeCompare(b.id));
+  if (listFailed.length > 0) {
+    console.error(
+      `
+ABORTED: provider catalog fetch failed for [${listFailed.join(", ")}] — roster NOT written. ` +
+        `A stale roster would let seed prune every healthy player of a failed provider. Retry the probe.`,
+    );
+    process.exit(1);
+  }
   writeFileSync(outPath, JSON.stringify({ probedAt: new Date().toISOString(), results }, null, 2));
   const capable = results.filter((r) => r.chatCapable);
   console.log(`\nDone: ${capable.length}/${results.length} models are chat-capable.`);

@@ -176,8 +176,6 @@ export function shortName(modelId: string): string {
   return base
     .replace(/-instruct.*$/i, "")
     .replace(/-it$/i, "")
-    .replace(/-a\d+b.*$/i, "")
-    .replace(/-\d+b.*$/i, "")
     .replace(/-v\d+.*$/i, "")
     .replace(/^agnes-/, "agnes ");
 }
