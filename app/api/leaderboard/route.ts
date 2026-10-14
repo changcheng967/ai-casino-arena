@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getStore } from "@/lib/arena/store";
+import { fideScale, poolStats } from "@/lib/arena/elo";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -8,6 +9,16 @@ export async function GET() {
   const store = await getStore();
   const models = await store.listModels();
   const sorted = [...models].sort((a, b) => b.elo - a.elo);
+  // fair wealth: seated players' chips on the felt count too, otherwise a
+  // model deep in a winning session looks poorer than a lobby idler
+  const state = await store.getArenaState();
+  const inPlay = new Map<string, number>();
+  for (const tb of state?.tables ?? []) {
+    for (const pl of tb.state.players) {
+      inPlay.set(pl.id, (inPlay.get(pl.id) ?? 0) + Math.max(0, pl.stack) + pl.betThisStreet);
+    }
+  }
+  const { mean, sd } = poolStats(sorted.filter((m) => m.status === "active"));
   return NextResponse.json({
     models: sorted.map((m, i) => {
       const vpip = m.handsPlayed > 0 ? (m.vpipHands / m.handsPlayed) * 100 : null;
@@ -22,7 +33,10 @@ export async function GET() {
         chatCapable: m.chatCapable,
         probeNote: (m as any).probeNote ?? null,
         elo: m.elo,
+        rating: fideScale(m.elo, mean, sd),
         bankroll: m.bankroll,
+        inPlay: inPlay.get(m.id) ?? 0,
+        totalWealth: m.bankroll + (inPlay.get(m.id) ?? 0),
         bailouts: m.bailouts,
         sessions: m.sessions,
         handsPlayed: m.handsPlayed,

@@ -43,7 +43,7 @@ import {
   STUCK_FRACTION,
 } from "./config";
 import { tableStakes, personalBB } from "./stakes";
-import { eloPairUpdate, pairwiseScore } from "./elo";
+import { eloPairUpdate, pairwiseScorePair } from "./elo";
 import { askDecision, askLeave, fallbackDecision, DecisionOutcome } from "./decide";
 import { nimChat, extractJson } from "../nim/client";
 import { buyinPrompt, buyinSystemPrompt } from "./prompt";
@@ -82,6 +82,56 @@ function freshState(): ArenaStateRow {
   };
 }
 
+const pairKey = (a: string, b: string): string => [a, b].sort().join("|");
+
+/** Track per-hand netBB deltas into the persistent pairwise evidence map. */
+function accruePairEvidence(
+  state: ArenaStateRow,
+  pairs: Array<[string, number, number]>, // [id, netBB_now, netBB_prev] for dealt players
+): void {
+  if (!state.pairEvidence) state.pairEvidence = {};
+  for (let i = 0; i < pairs.length; i++) {
+    for (let j = i + 1; j < pairs.length; j++) {
+      const [idA, nowA, prevA] = pairs[i];
+      const [idB, nowB, prevB] = pairs[j];
+      const k = pairKey(idA, idB);
+      const e = state.pairEvidence[k] ?? { h: 0, diff: 0 };
+      const delta = (nowA - prevA) - (nowB - prevB); // this hand's relative swing
+      const signed = idA < idB ? delta : -delta; // store relative to the sorted-first id
+      e.h += 1;
+      e.diff += signed;
+      state.pairEvidence[k] = e;
+    }
+  }
+}
+
+/** Read the pair's cumulative evidence as (diff, hands) from a's perspective. */
+function evidenceFor(state: ArenaStateRow, a: string, b: string): { diff: number; h: number } {
+  const e = state.pairEvidence?.[pairKey(a, b)];
+  if (!e) return { diff: 0, h: 0 };
+  // diff is stored relative to the sorted-first id
+  return a < b ? { diff: e.diff, h: e.h } : { diff: -e.diff, h: e.h };
+}
+
+/** Rebuild/repair the FIFO lobby queue each tick: seated/quarantined leave,
+ *  unseated actives join at the tail (oldest wait first on cold start). */
+function lobbyHygiene(state: ArenaStateRow, models: ModelRow[]): void {
+  const seated = new Set(state.tables.flatMap((tb) => tb.state.players.map((pl) => pl.id)));
+  const active = new Map(models.filter((m) => m.status === "active" && m.chatCapable).map((m) => [m.id, m]));
+  const queue = (state.lobbyQueue ?? []).filter((id) => active.has(id) && !seated.has(id));
+  const inQueue = new Set(queue);
+  const newcomers = [...active.keys()].filter((id) => !seated.has(id) && !inQueue.has(id));
+  if (!state.lobbySince) state.lobbySince = {};
+  for (const id of newcomers) {
+    queue.push(id);
+    state.lobbySince[id] = state.lobbySince[id] ?? new Date().toISOString();
+  }
+  for (const id of Object.keys(state.lobbySince)) {
+    if (!queue.includes(id)) delete state.lobbySince[id];
+  }
+  state.lobbyQueue = queue;
+}
+
 function attachTalk(state: TableState, seat: number, talk: string): void {
   const p = state.players[seat];
   if (!p) return;
@@ -95,9 +145,16 @@ function attachTalk(state: TableState, seat: number, talk: string): void {
   }
 }
 
-async function askBuyIn(model: ModelRow, sb: number, bb: number, tierName: string, minBuyIn: number, target: number): Promise<number> {
+async function askBuyIn(
+  model: ModelRow,
+  sb: number,
+  bb: number,
+  tierName: string,
+  minBuyIn: number,
+  target: number,
+): Promise<{ buyIn: number; responded: boolean }> {
   if (process.env.ARENA_FAKE_LLM === "1") {
-    return Math.min(model.bankroll, Math.max(minBuyIn, target));
+    return { buyIn: Math.min(model.bankroll, Math.max(minBuyIn, target)), responded: true };
   }
   try {
     const res = await nimChat({
@@ -112,10 +169,20 @@ async function askBuyIn(model: ModelRow, sb: number, bb: number, tierName: strin
     });
     const parsed = extractJson(res.text);
     const n = typeof parsed?.buyin === "number" ? Math.round(parsed.buyin) : NaN;
-    if (!Number.isFinite(n)) return Math.min(model.bankroll, Math.max(minBuyIn, target));
-    return Math.max(minBuyIn, Math.min(n, model.bankroll));
+    if (!Number.isFinite(n)) return { buyIn: Math.min(model.bankroll, Math.max(minBuyIn, target)), responded: true };
+    return { buyIn: Math.max(minBuyIn, Math.min(n, model.bankroll)), responded: true };
   } catch {
-    return Math.min(model.bankroll, Math.max(minBuyIn, DEFAULT_BUYIN_BBS * bb));
+    return { buyIn: Math.min(model.bankroll, Math.max(minBuyIn, DEFAULT_BUYIN_BBS * bb)), responded: false };
+  }
+}
+
+/** Escalate unseated no-answers: count them, quarantine at the threshold. */
+async function bumpFailures(repo: ArenaRepo, m: ModelRow, why: string): Promise<void> {
+  const fails = m.consecutiveFailures + 1;
+  if (fails >= QUARANTINE_THRESHOLD) {
+    await repo.patchModel(m.id, { status: "quarantined", consecutiveFailures: fails, healthNote: why });
+  } else {
+    await repo.patchModel(m.id, { consecutiveFailures: fails });
   }
 }
 
@@ -161,7 +228,11 @@ async function formTable(
   const stakes = tableStakes(picked.map((m) => m.bankroll));
 
   const buyInsList = await Promise.all(
-    picked.map((m) => askBuyIn(m, stakes.sb, stakes.bb, stakes.name, stakes.minBuyIn, stakes.targetStack)),
+    picked.map(async (m) => {
+      const r = await askBuyIn(m, stakes.sb, stakes.bb, stakes.name, stakes.minBuyIn, stakes.targetStack);
+      if (!r.responded) await bumpFailures(repo, m, "buy-in call failed while forming a table");
+      return r.buyIn;
+    }),
   );
 
   // randomize seat order for positional fairness
@@ -229,7 +300,12 @@ function handRowFrom(live: LiveTable): HandRow {
     awards: res.awards,
     actions: st.actionLog,
     showdown: res.showdown,
-    holeCards: res.holeCardsRevealed,
+    // archive keeps EVERY dealt player's cards — spectators get god view
+    // once the hand is over; revealed-at-showdown cards take precedence
+    holeCards: {
+      ...Object.fromEntries(st.players.filter((pl) => pl.holeCards.length === 2).map((pl) => [pl.id, [...pl.holeCards]])),
+      ...(res.holeCardsRevealed ?? {}),
+    },
     createdAt: new Date().toISOString(),
   };
 }
@@ -295,6 +371,7 @@ function fmtMoney(n: number): string {
 async function cashOutPlayer(
   repo: ArenaRepo,
   modelMap: Map<string, ModelRow>,
+  state: ArenaStateRow,
   live: LiveTable,
   seatIdx: number,
   note?: string,
@@ -319,8 +396,8 @@ async function cashOutPlayer(
     if (other.id === p.id) continue;
     const om = modelMap.get(other.id);
     if (!om) continue;
-    const otherNetBB = (Math.max(0, other.stack) - (live.buyIns[other.id] ?? 0)) / bb;
-    const score = pairwiseScore(netBB, hands, otherNetBB, live.stints?.[other.id] ?? 1);
+    const ev = evidenceFor(state, p.id, other.id);
+    const score = pairwiseScorePair(ev.diff, ev.h);
     const [dMe, dOther] = eloPairUpdate(
       { id: p.id, rating: eloBefore, sessionsPlayed: me?.sessions ?? 0, careerHands: me?.handsPlayed },
       { id: other.id, rating: om.elo, sessionsPlayed: om.sessions, careerHands: om.handsPlayed },
@@ -346,13 +423,15 @@ async function cashOutPlayer(
 
   const eloAfter = Math.round((eloBefore + (eloChanges.get(p.id) ?? 0)) * 100) / 100;
 
-  // bankroll: chips off the felt + career stats
+  // bankroll: chips off the felt + career stats.
+  // NOTE: netProfit is NOT touched here — recordHand already accrues it
+  // hand-by-hand (awards − contributions), which sums to stack − buyIn over
+  // the stint exactly; adding it again would double-count.
   if (me) {
     await repo.patchModel(p.id, {
       bankroll: me.bankroll + stack,
       elo: eloAfter,
       sessions: me.sessions + 1,
-      netProfit: me.netProfit + (stack - buyIn),
       lastSeenAt: new Date().toISOString(),
     });
     modelMap.set(p.id, {
@@ -360,7 +439,6 @@ async function cashOutPlayer(
       bankroll: me.bankroll + stack,
       elo: eloAfter,
       sessions: me.sessions + 1,
-      netProfit: me.netProfit + (stack - buyIn),
     });
     await repo.insertEloHistory([
       {
@@ -397,6 +475,11 @@ async function cashOutPlayer(
   st.players.splice(seatIdx, 1);
   if (seatIdx < st.dealerSeat) st.dealerSeat -= 1;
   if (st.dealerSeat >= st.players.length) st.dealerSeat = 0;
+  // keep the action pointer consistent with the shifted array: seats before
+  // the removed one shift the acting seat left; a removed acting seat hands
+  // action to whoever now occupies that index
+  if (st.currentSeat > seatIdx) st.currentSeat -= 1;
+  else if (st.currentSeat === seatIdx && st.players.length > 0) st.currentSeat %= st.players.length;
   delete live.buyIns[p.id];
   delete live.bankrolls[p.id];
   if (live.stints) delete live.stints[p.id];
@@ -455,9 +538,9 @@ async function rotateTable(
     const p = st.players[i];
     if (p.satOut && p.stack <= 0) {
       const m = modelMap.get(p.id);
-      await cashOutPlayer(repo, modelMap, live, i);
+      await cashOutPlayer(repo, modelMap, state, live, i);
       state.lobbyNotes.unshift(
-        `${p.name} went BUST at the ${live.tierName} table and walked away with nothing — ${new Date().toISOString()}`,
+        `${p.name} went BUST at the table and walked away with nothing — ${new Date().toISOString()}`,
       );
       state.lobbyNotes = state.lobbyNotes.slice(0, 40);
       report.playersLeft++;
@@ -475,7 +558,7 @@ async function rotateTable(
     if (hands >= LEAVE_HARD_HANDS) {
       const net = p.stack - (live.buyIns[p.id] ?? 0);
       const why = net >= 0 ? `up ${fmtMoney(net)}` : `down ${fmtMoney(-net)}`;
-      await cashOutPlayer(repo, modelMap, live, i);
+      await cashOutPlayer(repo, modelMap, state, live, i);
       state.lobbyNotes.unshift(
         `House called time on ${p.name} after ${hands} hands (${why}) — seat opened — ${new Date().toISOString()}`,
       );
@@ -514,9 +597,9 @@ async function rotateTable(
       if (leave) {
         const net = c.p.stack - (live.buyIns[c.p.id] ?? 0);
         const why = net >= 0 ? `up ${fmtMoney(net)}` : `stuck ${fmtMoney(-net)}`;
-        await cashOutPlayer(repo, modelMap, live, st.players.indexOf(c.p));
+        await cashOutPlayer(repo, modelMap, state, live, st.players.indexOf(c.p));
         state.lobbyNotes.unshift(
-          `${c.p.name} colored up and left the ${live.tierName} table (${why}) — ${new Date().toISOString()}`,
+          `${c.p.name} colored up and left the table (${why}) — ${new Date().toISOString()}`,
         );
         state.lobbyNotes = state.lobbyNotes.slice(0, 40);
         report.playersLeft++;
@@ -525,23 +608,73 @@ async function rotateTable(
     }
   }
 
-  // 3) refill open seats from the lobby (at most one per table per tick).
-  // Keep a reserve of the budget so a slow buy-in call can't blow the tick:
-  // 12s on the production budget, proportionally less on short test budgets.
-  const refillGate = deadline - Math.min(12_000, (deadline - tickStartedAt) * 0.3);
-  if (st.players.length >= 1 && st.players.length < TABLE_SIZE && Date.now() < refillGate) {
+  // 3) refill open seats from the lobby — FILL THE TABLE.
+  await refillSeats(repo, modelMap, state, live, refillGateDeadline(deadline, tickStartedAt), report);
+
+  // 4) close the table if it can't continue
+  if (st.players.length <= 1 || st.sessionOver) {
+    while (st.players.length > 0) {
+      await cashOutPlayer(repo, modelMap, state, live, 0);
+      report.playersLeft++;
+    }
+    await syncSessionRow(repo, live, true);
+    report.tablesClosed++;
+    return false;
+  }
+
+  if (changed) await syncSessionRow(repo, live);
+  return true;
+}
+
+function refillGateDeadline(deadline: number, tickStartedAt: number): number {
+  return deadline - Math.min(8_000, (deadline - tickStartedAt) * 0.2);
+}
+
+/** Seat waiting players (FIFO) into a table's open seats, up to 6 per call.
+ *  A no-answer at the queue head rotates that model to the tail and tries the
+ *  next — dead models never clog the line. */
+async function refillSeats(
+  repo: ArenaRepo,
+  modelMap: Map<string, ModelRow>,
+  state: ArenaStateRow,
+  live: LiveTable,
+  refillGate: number,
+  report: TickReport,
+): Promise<void> {
+  const st = live.state;
+  const bb = st.bigBlind;
+  {
+  for (let refill = 0; refill < 6; refill++) {
+    if (st.players.length >= TABLE_SIZE || Date.now() >= refillGate) break;
     const seated = new Set(state.tables.flatMap((t) => t.state.players.map((p) => p.id)));
-    const candidates = [...modelMap.values()].filter(
-      (m) =>
-        m.status === "active" &&
-        m.chatCapable &&
-        !seated.has(m.id) &&
-        m.bankroll >= 40 * bb && // can afford the minimum buy-in
-        personalBB(m.bankroll) >= bb, // properly rolled for these stakes
-    );
-    if (candidates.length > 0) {
-      const pick = candidates[Math.floor(Math.random() * candidates.length)];
-      const buyIn = await askBuyIn(pick, st.smallBlind, bb, live.tierName, 40 * bb, DEFAULT_BUYIN_BBS * bb);
+    // FIFO: the longest-waiting eligible model takes the seat — the queue is
+    // the single fair ordering, everyone can see it on the floor page
+    const queue = (state.lobbyQueue ?? []).filter((id) => !seated.has(id));
+    const candidates = queue
+      .map((id) => modelMap.get(id))
+      .filter(
+        (m): m is ModelRow =>
+          !!m &&
+          m.status === "active" &&
+          m.chatCapable &&
+          m.bankroll >= 40 * bb && // can afford the minimum buy-in
+          personalBB(m.bankroll) >= bb, // properly rolled for these stakes
+      );
+    if (candidates.length === 0) break;
+    {
+      const pick = candidates[0];
+      const r = await askBuyIn(pick, st.smallBlind, bb, live.tierName, 40 * bb, DEFAULT_BUYIN_BBS * bb);
+      if (!r.responded) {
+        // queue fairness: a model that doesn't answer when its turn comes goes
+        // to the BACK of the line — the seat goes to the next working model.
+        // Repeated no-answers escalate to quarantine and leave the line.
+        await bumpFailures(repo, pick, "did not respond when called from the waiting list");
+        state.lobbyQueue = [...(state.lobbyQueue ?? []).filter((x) => x !== pick.id), pick.id];
+        if (!state.lobbySince) state.lobbySince = {};
+        state.lobbySince[pick.id] = new Date().toISOString(); // re-queued now
+        continue;
+      }
+      const buyIn = r.buyIn;
       const seatAt = Math.floor(Math.random() * (st.players.length + 1));
       st.players.splice(seatAt, 0, {
         id: pick.id,
@@ -556,34 +689,25 @@ async function rotateTable(
         satOut: false,
       });
       if (seatAt <= st.dealerSeat) st.dealerSeat += 1;
+      // seats at/after the insertion point shift right — keep the action pointer
+      // pointing at the same player it pointed at before
+      if (st.currentSeat >= seatAt) st.currentSeat += 1;
       live.buyIns[pick.id] = buyIn;
       live.bankrolls[pick.id] = pick.bankroll;
       if (!live.stints) live.stints = {};
       live.stints[pick.id] = 0;
+      state.lobbyQueue = (state.lobbyQueue ?? []).filter((id) => id !== pick.id);
+      if (state.lobbySince) delete state.lobbySince[pick.id];
       await repo.patchModel(pick.id, { bankroll: pick.bankroll - buyIn, lastSeenAt: new Date().toISOString() });
       modelMap.set(pick.id, { ...pick, bankroll: pick.bankroll - buyIn });
       state.lobbyNotes.unshift(
-        `${pick.name} took the open seat at the ${live.tierName} table (${fmtMoney(buyIn)}) — ${new Date().toISOString()}`,
+        `${pick.name} took the open seat at the table (${fmtMoney(buyIn)}) — ${new Date().toISOString()}`,
       );
       state.lobbyNotes = state.lobbyNotes.slice(0, 40);
       report.seatsFilled++;
-      changed = true;
     }
   }
-
-  // 4) close the table if it can't continue
-  if (st.players.length <= 1 || st.sessionOver) {
-    while (st.players.length > 0) {
-      await cashOutPlayer(repo, modelMap, live, 0);
-      report.playersLeft++;
-    }
-    await syncSessionRow(repo, live, true);
-    report.tablesClosed++;
-    return false;
   }
-
-  if (changed) await syncSessionRow(repo, live);
-  return true;
 }
 
 export async function runTick(repo: ArenaRepo, opts?: { budgetMs?: number }): Promise<TickReport> {
@@ -613,6 +737,10 @@ export async function runTick(repo: ArenaRepo, opts?: { budgetMs?: number }): Pr
 
   const models = await repo.listModels();
   const modelMap = new Map(models.map((m) => [m.id, m]));
+
+  // ---- lobby queue hygiene (FIFO: repairs after restarts, drops the seated
+  // and the quarantined, enqueues newly-unseated actives) ----
+  lobbyHygiene(state, models);
 
   // ---- bailouts for broke, unseated models ----
   const seatedIds = new Set(state.tables.flatMap((t) => t.state.players.map((p) => p.id)));
@@ -701,6 +829,16 @@ export async function runTick(repo: ArenaRepo, opts?: { budgetMs?: number }): Pr
     }
   }
 
+  // ---- FILL FIRST: before spending budget on decisions, seat waiting
+  // players into every table with open seats. Tables must never sit short
+  // while the lobby has players — this pass runs early every tick so seats
+  // open and fill within one heartbeat even when decisions eat the budget. ----
+  for (const live of state.tables) {
+    if (live.state.players.length < TABLE_SIZE && live.state.players.length >= 1) {
+      await refillSeats(repo, modelMap, state, live, startedAt + (opts?.budgetMs ?? TICK_WORK_MS) - 6_000, report);
+    }
+  }
+
   // ---- advance all tables in parallel lanes until budget runs out ----
   // Checkpoints persist progress after every decision so a hard function
   // timeout (Vercel) loses at most one in-flight call, never a whole tick.
@@ -711,6 +849,26 @@ export async function runTick(repo: ArenaRepo, opts?: { budgetMs?: number }): Pr
   const recordHand = async (live: LiveTable): Promise<void> => {
     const row = handRowFrom(live);
     await repo.insertHand(row);
+    // realtime net career: every hand moves netProfit by (awards won − chips
+    // contributed) so profiles and the leaderboard track play hand-by-hand,
+    // not only at cash-out. Splits split their award evenly.
+    {
+      const res = live.state.lastHandResult;
+      const awards = res?.awards ?? [];
+      const won = new Map<string, number>();
+      for (const a of awards) {
+        const share = (a.amount ?? 0) / Math.max(1, a.winners?.length ?? 1);
+        for (const w of a.winners ?? []) won.set(w, (won.get(w) ?? 0) + share);
+      }
+      for (const p of live.state.players) {
+        const m = modelMap.get(p.id);
+        if (!m) continue;
+        const net = Math.round((won.get(p.id) ?? 0) - p.committedThisHand);
+        if (net === 0) continue;
+        await repo.patchModel(p.id, { netProfit: m.netProfit + net });
+        modelMap.set(p.id, { ...m, netProfit: m.netProfit + net });
+      }
+    }
     const stats = statsFromHand(live);
     for (const [id, d] of stats) {
       const m = modelMap.get(id);
@@ -737,31 +895,35 @@ export async function runTick(repo: ArenaRepo, opts?: { budgetMs?: number }): Pr
         biggestPot: Math.max(m.biggestPot, d.biggestPot),
       });
     }
-    // live Elo drift: settle every seated pair on cumulative stint standings
-    // every hand — the leaderboard moves in realtime, and each update is
-    // zero-sum so speed never costs fairness. The exit settlement (weight
-    // ELO_EXIT_WEIGHT) remains the authoritative correction afterwards.
+    // live Elo drift: every hand, accrue this hand's relative swings into the
+    // pair's PERSISTENT evidence and settle on the shrunk effect-size score.
+    // Shrinkage damps luck at the source (a lone spike ≈ no movement), the
+    // fixed σ_d divisor guarantees a stable fixed point, and the pair-averaged
+    // K keeps every update exactly zero-sum. Movement is honest per-hand, and
+    // evidence accumulates ACROSS stints — pairs that keep meeting keep
+    // sharpening.
     {
       const bb = live.state.bigBlind;
       const ps = live.state.players.filter((p) => p.holeCards.length === 2);
       const standings = ps.map((p) => ({
         p,
         netBB: (p.stack - (live.buyIns[p.id] ?? 0)) / bb,
+        prevNetBB: (live.prevNetBB ?? {})[p.id] ?? 0, // 0 = netBB at seat time
       }));
+      accruePairEvidence(
+        state,
+        standings.map((s) => [s.p.id, s.netBB, s.prevNetBB] as [string, number, number]),
+      );
       const deltas = new Map<string, number>();
       for (let a = 0; a < standings.length; a++) {
         for (let b = a + 1; b < standings.length; b++) {
           const A = standings[a];
           const B = standings[b];
-          if (A.netBB === B.netBB) continue; // tie: no exchange
           const mA = modelMap.get(A.p.id);
           const mB = modelMap.get(B.p.id);
-          const score = pairwiseScore(
-            A.netBB,
-            Math.max(1, live.stints?.[A.p.id] ?? 1),
-            B.netBB,
-            Math.max(1, live.stints?.[B.p.id] ?? 1),
-          );
+          const ev = evidenceFor(state, A.p.id, B.p.id);
+          const score = pairwiseScorePair(ev.diff, ev.h);
+          if (Math.abs(score - 0.5) < 0.0005) continue; // no evidence yet — no exchange
           const [dA, dB] = eloPairUpdate(
             { id: A.p.id, rating: mA?.elo ?? 1200, sessionsPlayed: mA?.sessions ?? 0, careerHands: mA?.handsPlayed },
             { id: B.p.id, rating: mB?.elo ?? 1200, sessionsPlayed: mB?.sessions ?? 0, careerHands: mB?.handsPlayed },
@@ -772,6 +934,8 @@ export async function runTick(repo: ArenaRepo, opts?: { budgetMs?: number }): Pr
           deltas.set(B.p.id, (deltas.get(B.p.id) ?? 0) + dB);
         }
       }
+      // remember these standings as the per-hand delta baseline for next hand
+      live.prevNetBB = Object.fromEntries(standings.map((s) => [s.p.id, s.netBB]));
       const hist: EloHistoryRow[] = [];
       for (const [id, d] of deltas) {
         const m = modelMap.get(id);
@@ -805,6 +969,31 @@ export async function runTick(repo: ArenaRepo, opts?: { budgetMs?: number }): Pr
     let guard = 0;
     while (Date.now() < deadline && !live.state.sessionOver && guard++ < 400) {
       if (live.state.awaitingDecision) {
+        // self-heal: a stale action pointer (seat removed/refilled mid-hand by
+        // an older build) must never stall a table — retarget to the next
+        // alive seat and let the house play a legal default for this orbit.
+        const ps = live.state.players;
+        if (
+          live.state.currentSeat < 0 ||
+          live.state.currentSeat >= ps.length ||
+          ps[live.state.currentSeat].folded ||
+          ps[live.state.currentSeat].satOut
+        ) {
+          let next = -1;
+          for (let k = 1; k <= ps.length; k++) {
+            const cand = (((live.state.currentSeat < 0 ? 0 : live.state.currentSeat) + k) % ps.length + ps.length) % ps.length;
+            if (!ps[cand].folded && !ps[cand].satOut) {
+              next = cand;
+              break;
+            }
+          }
+          if (next === -1) break; // nobody can act — hand is over, drain path handles it
+          live.state.currentSeat = next;
+          state.lobbyNotes.unshift(
+            `House fixed the button at the table (stale action pointer) — ${new Date().toISOString()}`,
+          );
+          state.lobbyNotes = state.lobbyNotes.slice(0, 40);
+        }
         const la = legalActions(live.state);
         if (!la) break;
         const me = live.state.players[la.seat];
@@ -875,10 +1064,10 @@ export async function runTick(repo: ArenaRepo, opts?: { budgetMs?: number }): Pr
               timeouts: m.timeouts + (isTimeout ? 1 : 0),
             });
             state.lobbyNotes.unshift(
-              `${m.name} lost connection at the ${live.tierName} table and stepped away — rejoins automatically when healthy — ${new Date().toISOString()}`,
+              `${m.name} lost connection at the table and stepped away — rejoins automatically when healthy — ${new Date().toISOString()}`,
             );
             state.lobbyNotes = state.lobbyNotes.slice(0, 40);
-            await cashOutPlayer(repo, modelMap, live, la.seat);
+            await cashOutPlayer(repo, modelMap, state, live, la.seat);
             report.playersLeft++;
           } else {
             await repo.patchModel(me.id, {

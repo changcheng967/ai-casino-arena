@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { eloDeltas, rankByNetBB, applyDeltas, eloPairUpdate, pairwiseScore, kDynamic, EloPlayer } from "./elo";
+import { eloDeltas, rankByNetBB, applyDeltas, eloPairUpdate, pairwiseScorePair, kDynamic, EloPlayer } from "./elo";
 
 const P = (id: string, rating: number, careerHands = 600): EloPlayer => ({
   id,
@@ -31,23 +31,6 @@ describe("kDynamic", () => {
   });
 });
 
-describe("pairwiseScore (z-filter)", () => {
-  it("returns 0.5 for an exact tie (no evidence either way)", () => {
-    expect(pairwiseScore(0, 10, 0, 10)).toBeCloseTo(0.5, 1);
-  });
-  it("is symmetric: S(a,b) = 1 − S(b,a)", () => {
-    const s = pairwiseScore(30, 12, -5, 8);
-    expect(s).toBeCloseTo(1 - pairwiseScore(-5, 8, 30, 12), 6);
-  });
-  it("damps a short luck spike less than sustained dominance at the same rate", () => {
-    // +40bb over 2 hands is weaker evidence than +400bb over 20 hands at the same 20bb/h rate
-    const spike = pairwiseScore(40, 2, 0, 2);
-    const sustained = pairwiseScore(400, 20, 0, 20);
-    expect(spike).toBeGreaterThan(0.5);
-    expect(spike).toBeLessThan(sustained);
-    expect(sustained).toBeGreaterThan(0.97);
-  });
-});
 
 describe("eloDeltas fairness", () => {
   it("is exactly zero-sum (pair-averaged K)", () => {
@@ -118,5 +101,34 @@ describe("eloPairUpdate zero-sum", () => {
   it("moves both sides by equal magnitude for any score", () => {
     const [dA, dB] = eloPairUpdate(P("a", 1250, 10), P("b", 1100, 2000), 0.87, 0.25);
     expect(dA).toBeCloseTo(-dB, 6);
+  });
+});
+
+
+describe("pairwiseScorePair (shrunk effect-size)", () => {
+  it("treats a short luck spike as no evidence", () => {
+    // +29bb over 2 shared hands — old significance-S scored this ~0.87
+    expect(pairwiseScorePair(29, 2)).toBeLessThan(0.51);
+  });
+  it("is symmetric via sign: no edge -> ~0.5, sign flips the side", () => {
+    expect(pairwiseScorePair(0, 50)).toBeCloseTo(0.5, 3);
+    const s = pairwiseScorePair(120, 100);
+    expect(s).toBeGreaterThan(0.5);
+    expect(pairwiseScorePair(-120, 100)).toBeCloseTo(1 - s, 6);
+  });
+  it("has a stable fixed point: more of the SAME rate barely moves S", () => {
+    const s100 = pairwiseScorePair(90, 100); // 0.9bb/h sustained
+    const s1000 = pairwiseScorePair(900, 1000); // same rate, 10x evidence
+    expect(s100).toBeGreaterThan(0.5);
+    expect(s1000).toBeGreaterThan(s100); // sharper estimate, but…
+    expect(s1000 - s100).toBeLessThan(0.05); // …converging, not diverging
+    expect(s1000).toBeLessThan(0.56); // bounded far from 1.0
+  });
+  it("separates degenerate strategies clearly", () => {
+    // 15bb/h fold-bot edge over 200 shared hands
+    expect(pairwiseScorePair(3000, 200)).toBeGreaterThan(0.6);
+  });
+  it("zero evidence is exactly neutral", () => {
+    expect(pairwiseScorePair(0, 0)).toBe(0.5);
   });
 });

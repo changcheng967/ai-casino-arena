@@ -16,7 +16,7 @@ export async function GET(req: NextRequest) {
   const roomBySession = new Map(
     (state?.tables ?? []).map((t, idx) => [
       t.sessionRowId,
-      `Table ${idx + 1} · ${t.tierName} · $${t.state.smallBlind}/$${t.state.bigBlind}`,
+      `Table ${idx + 1}`,
     ]),
   );
   return NextResponse.json({
@@ -25,7 +25,7 @@ export async function GET(req: NextRequest) {
       sessionId: h.sessionId,
       handNo: h.handNo,
       tierName: h.tierName,
-      roomName: roomBySession.get(h.sessionId) ?? `${h.tierName} · $${h.sb}/$${h.bb}`,
+      roomName: roomBySession.get(h.sessionId) ?? `${h.tierName}`,
       sb: h.sb,
       bb: h.bb,
       board: h.board,
@@ -35,6 +35,7 @@ export async function GET(req: NextRequest) {
       awardSum: h.awards.reduce((x, a) => x + a.amount, 0),
       createdAt: h.createdAt,
       players: Object.keys(h.holeCards),
+      holeCards: h.holeCards,
     })),
   });
 }

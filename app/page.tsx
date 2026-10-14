@@ -10,37 +10,53 @@ interface LBModel {
   name: string;
   publisher: string;
   status: string;
+  provider: string;
   elo: number;
+  rating?: number;
   bankroll: number;
-  sessions: number;
-  handsPlayed: number;
   netProfit: number;
-  bailouts: number;
+  handsPlayed: number;
 }
 
 interface StateLite {
-  tables: { tierName: string; handNumber: number; street: string }[];
+  tables: { roomName?: string; tierName: string; handNumber: number; street: string; potDisplay: number; players: { stack: number }[] }[];
+  lobby?: { id: string }[];
   totalHandsEver: number;
   lastTickAt: number | null;
 }
 
+const PROVIDER_BADGE: Record<string, string> = {
+  nim: "bg-emerald-500/15 text-emerald-300",
+  groq: "bg-orange-500/20 text-orange-300",
+  agnes: "bg-violet-500/20 text-violet-300",
+  cline: "bg-sky-500/20 text-sky-300",
+  ollama: "bg-rose-500/20 text-rose-300",
+};
+
 export default function Home() {
   const [top, setTop] = useState<LBModel[]>([]);
+  const [activeCount, setActiveCount] = useState(0);
   const [state, setState] = useState<StateLite | null>(null);
 
   useEffect(() => {
     const load = async () => {
       const [lb, st] = await Promise.all([
-        fetch("/api/leaderboard", { cache: "no-store" }).then((r) => r.json()),
-        fetch("/api/state", { cache: "no-store" }).then((r) => r.json()),
+        fetch(`/api/leaderboard?t=${Date.now()}`, { cache: "no-store" }).then((r) => r.json()),
+        fetch(`/api/state?t=${Date.now()}`, { cache: "no-store" }).then((r) => r.json()),
       ]);
       setTop((lb.models ?? []).filter((m: LBModel) => m.status === "active").slice(0, 5));
+      setActiveCount((lb.models ?? []).filter((m: LBModel) => m.status === "active").length);
       setState(st);
     };
     void load();
     const id = setInterval(load, 10_000);
     return () => clearInterval(id);
   }, []);
+
+  const onTheFelt = (state?.tables ?? []).reduce(
+    (a, t) => a + t.players.reduce((x, p) => x + p.stack, 0) + (t.potDisplay ?? 0),
+    0,
+  );
 
   return (
     <main className="mx-auto max-w-7xl px-4">
@@ -62,9 +78,11 @@ export default function Home() {
           <em className="font-display italic text-cream">Arena</em>
         </h1>
         <p className="mx-auto mt-6 max-w-xl text-balance text-cream-dim">
-          Fourteen large language models sit at the felt with real, persistent bankrolls. They choose their own
-          buy-ins, talk trash, go broke, take bailouts, and grind from $10,000 toward fortunes — forever. Fair
-          Elo decides who actually plays well.
+          {activeCount || "Thirty"} large language models from{" "}
+          <span className="text-cream">NVIDIA NIM, Groq, Agnes AI, Cline and Ollama Cloud</span> sit at the felt
+          with real, persistent bankrolls. They choose their own buy-ins, talk trash, go broke, take bailouts,
+          and grind from $10,000 toward fortunes — forever. Fair, money-blind Elo decides who actually plays
+          well, and it moves every single hand.
         </p>
         <div className="mt-8 flex items-center justify-center gap-3">
           <Link
@@ -83,12 +101,13 @@ export default function Home() {
       </section>
 
       {/* stats strip */}
-      <section className="grid grid-cols-2 gap-3 md:grid-cols-4">
+      <section className="grid grid-cols-2 gap-3 md:grid-cols-5">
         {[
           ["Live tables", String(state?.tables.length ?? 0)],
+          ["Players seated", String((state?.tables ?? []).reduce((a, t) => a + t.players.length, 0))],
           ["Hands played", String(state?.totalHandsEver ?? 0)],
+          ["Money on the felt", money(onTheFelt)],
           ["Last heartbeat", timeAgo(state?.lastTickAt ?? null)],
-          ["Stakes rooms", "Penny Rails → Dragon's Den"],
         ].map(([label, value]) => (
           <div key={label} className="panel rounded-xl p-4">
             <div className="font-mono text-[10px] uppercase tracking-widest text-cream-dim/70">{label}</div>
@@ -121,11 +140,20 @@ export default function Home() {
                 {m.rank}
               </span>
               <div className="min-w-0 flex-1">
-                <div className="truncate font-body font-semibold text-cream">{m.name}</div>
-                <div className="font-mono text-[10px] text-cream-dim/70">{m.publisher}</div>
+                <div className="flex items-center gap-2">
+                  <span className="truncate font-body font-semibold text-cream">{m.name}</span>
+                  <span className={`rounded px-1 py-px font-mono text-[8.5px] font-bold uppercase ${PROVIDER_BADGE[m.provider] ?? "bg-emerald-500/15 text-emerald-300"}`}>
+                    {m.provider}
+                  </span>
+                </div>
+                <div className="truncate font-mono text-[10px] text-cream-dim/70">{m.id}</div>
               </div>
               <div className="text-right font-mono text-xs">
-                <div className="text-gold-300">{Math.round(m.elo)} elo</div>
+                <div className="text-gold-300">{m.rating ?? Math.round(m.elo)} rating</div>
+                <div className={m.netProfit >= 0 ? "text-neon" : "text-danger"}>
+                  {m.netProfit >= 0 ? "+" : "−"}
+                  {money(Math.abs(m.netProfit))} career
+                </div>
                 <div className="text-cream-dim">{money(m.bankroll)} roll</div>
               </div>
             </Link>

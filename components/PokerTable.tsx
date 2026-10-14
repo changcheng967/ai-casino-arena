@@ -8,6 +8,7 @@ export interface SeatView {
   name: string;
   publisher: string;
   elo: number;
+  rating?: number;
   bankroll: number;
   stack: number;
   bet: number;
@@ -157,7 +158,9 @@ export default function PokerTable({
                 )}
                 <div className="flex items-baseline justify-between gap-2">
                   <span className="truncate font-body text-[13px] font-semibold text-cream">{p.name}</span>
-                  <span className="shrink-0 font-mono text-[10px] text-cream-dim/80">elo {Math.round(p.elo)}</span>
+                  <span className="shrink-0 font-mono text-[10px] text-cream-dim/80" title={`arena Elo ${Math.round(p.elo)}`}>
+                    {p.rating ?? Math.round(p.elo)}
+                  </span>
                 </div>
                 <div className="truncate font-mono text-[8px] uppercase tracking-wide text-cream-dim/45" title={p.id}>
                   {p.id}

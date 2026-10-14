@@ -2,7 +2,7 @@
 
 import { use, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { money, cardParts } from "@/lib/format";
+import { money, cardParts, shortModelName } from "@/lib/format";
 
 interface Action {
   street: string;
@@ -32,11 +32,16 @@ interface HandDetail {
 
 const STREET_ORDER = ["preflop", "flop", "turn", "river", "showdown", "payout"];
 
+function displayName(pid: string): string {
+  return shortModelName(pid);
+}
+
 export default function HandReplayPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
   const [h, setH] = useState<HandDetail | null>(null);
   const [step, setStep] = useState(0);
   const [err, setErr] = useState(false);
+  const [auto, setAuto] = useState(false);
 
   useEffect(() => {
     void (async () => {
@@ -51,12 +56,24 @@ export default function HandReplayPage({ params }: { params: Promise<{ id: strin
 
   const visible = useMemo(() => (h ? h.actions.slice(0, step) : []), [h, step]);
 
+  // autoplay: step action-by-action; stops at the end
+  useEffect(() => {
+    if (!auto || !h) return;
+    if (step >= h.actions.length) {
+      setAuto(false);
+      return;
+    }
+    const t = setTimeout(() => setStep((s) => Math.min(h.actions.length, s + 1)), 650);
+    return () => clearTimeout(t);
+  }, [auto, step, h]);
+
   // replay state at current step
   const snapshot = useMemo(() => {
     if (!h) return null;
     const players = new Map<string, { bet: number; folded: boolean; put: number; last: string }>();
     const board: number[] = [];
     let potTotal = 0;
+    let prevStreet = "";
     const notes: string[] = [];
     for (const a of visible) {
       if (a.type === "deal") {
@@ -64,17 +81,27 @@ export default function HandReplayPage({ params }: { params: Promise<{ id: strin
         if (a.street === "flop") board.push(-1, -1, -1);
         else if (a.street === "turn" || a.street === "river") board.push(-1);
       } else if (a.type === "showdown" || a.type === "win") {
-        notes.push(`${a.playerId.split("/").pop()} ${a.type} ${a.note ?? ""} ${a.amount ? money(a.amount) : ""}`);
+        notes.push(`${displayName(a.playerId)} ${a.type} ${a.note ?? ""} ${a.amount ? money(a.amount) : ""}`);
       } else {
+        // a new street resets the per-street bet tracking (call amounts are
+        // the call SIZE, not the street total — without this reset the pot
+        // replay undercounts by exactly the preflop money)
+        if (a.street !== prevStreet) {
+          for (const p of players.values()) p.bet = 0;
+          prevStreet = a.street;
+        }
         const p = players.get(a.playerId) ?? { bet: 0, folded: false, put: 0, last: "" };
         if (a.type === "fold") p.folded = true;
         if (a.amount) {
-          const add = Math.max(0, a.amount - p.bet);
+          // engine log semantics: post/call amounts are CHIPS MOVED this
+          // action; raise amounts are the street TOTAL (raise-to). Blind
+          // completion calls log the call size, not the street total.
+          const isTotal = a.type === "raise" || a.type === "bet" || a.type === "allin";
+          const add = isTotal ? Math.max(0, a.amount - p.bet) : a.amount;
           potTotal += add;
           p.put += add;
-          p.bet = a.amount;
+          p.bet = isTotal ? Math.max(p.bet, a.amount) : p.bet + a.amount;
         }
-        if (a.type === "post") potTotal += Math.max(0, (a.amount ?? 0) - p.put), p.put = Math.max(p.put, a.amount ?? 0);
         p.last = `${a.type}${a.amount ? " " + money(a.amount) : ""}${a.note ? " " + a.note : ""}`;
         players.set(a.playerId, p);
       }
@@ -132,6 +159,15 @@ export default function HandReplayPage({ params }: { params: Promise<{ id: strin
           >
             ⟲ reset
           </button>
+          <button
+            onClick={() => {
+              if (step >= (h?.actions.length ?? 0)) setStep(0);
+              setAuto((a) => !a);
+            }}
+            className={`rounded-lg px-3 py-1.5 font-mono text-xs font-semibold ${auto ? "bg-gold-500/30 text-gold-300" : "hairline text-cream-dim hover:text-gold-300"}`}
+          >
+            {auto ? "❚❚ pause" : "▶ auto play"}
+          </button>
           <input
             type="range"
             min={0}
@@ -173,7 +209,7 @@ export default function HandReplayPage({ params }: { params: Promise<{ id: strin
                   }`}
                 >
                   <span className="min-w-0 flex-1 truncate font-mono text-xs text-cream">
-                    {pid.split("/").pop()}
+                    {displayName(pid)}
                     {p?.folded && <span className="ml-2 text-cream-dim/50">folded</span>}
                   </span>
                   <span className="inline-flex gap-1">
@@ -193,12 +229,21 @@ export default function HandReplayPage({ params }: { params: Promise<{ id: strin
             })}
           </ul>
           <div className="mt-4 space-y-1 font-mono text-[11px] text-gold-300">
-            {h.awards.map((a, i) => (
-              <div key={i}>
-                {a.winners.map((w) => w.split("/").pop()).join(", ")} +{money(a.amount)}
-                {a.handName ? ` — ${a.handName}` : ""}
-              </div>
-            ))}
+            {h.awards.map((a, i) => {
+              const share = a.amount / Math.max(1, a.winners.length);
+              return (
+                <div key={i}>
+                  {a.winners.map((w) => displayName(w)).join(", ")} +{money(a.amount)}
+                  {a.handName ? ` — ${a.handName}` : ""}
+                  {a.winners.length === 1 && (
+                    <span className="ml-2 text-neon">
+                      net {share >= (snapshot.players.get(a.winners[0])?.put ?? 0) ? "+" : "−"}
+                      {money(Math.abs(share - (snapshot.players.get(a.winners[0])?.put ?? 0)))}
+                    </span>
+                  )}
+                </div>
+              );
+            })}
           </div>
         </section>
 
@@ -221,7 +266,7 @@ export default function HandReplayPage({ params }: { params: Promise<{ id: strin
                       current ? "bg-gold-500/20 text-gold-300" : past ? "text-cream-dim" : "text-cream-dim/30"
                     }`}
                   >
-                    {a.playerId ? `${a.playerId.split("/").pop()} ` : ""}
+                    {a.playerId ? `${displayName(a.playerId)} ` : ""}
                     {a.type}
                     {a.amount ? ` ${money(a.amount)}` : ""}
                     {a.note ? <span className="text-talk"> {a.note}</span> : ""}

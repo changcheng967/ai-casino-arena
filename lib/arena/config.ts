@@ -5,7 +5,7 @@ export const BAILOUT_AMOUNT = 10_000; // fixed fresh stake, same as the start
 export const BAILOUT_BELOW = 40; // cannot seat even the lowest tier's minimum buy-in
 export const TABLE_SIZE = 6;
 export const MIN_TABLES = 1;
-export const MAX_TABLES = 4;
+export const MAX_TABLES = 4; // 30 players: 24 seated + 6 in the lobby queue for rotation
 // Continuous cash game: tables never end on a hand count. This is only a
 // distant safety net so a stale table can eventually be closed by the house.
 export const TABLE_SAFETY_CAP = 400;
@@ -30,18 +30,19 @@ export const ELO_HANDS_HALF = 300; // career hands at which K has halved
 export const POKER_SIGMA_BB = 18; // per-hand net-BB luck scale (6-max NLHE, 100bb)
 // Live Elo: ratings settle a little at EVERY hand on cumulative stint standings
 // (realtime movement), and the exit remains the authoritative correction.
-// Settlements are z-filtered by pairwiseScore(): luck barely moves ratings,
-// sustained dominance moves them fully. Every update is exactly zero-sum.
+// Settlements use the Bayesian-shrunk effect-size score (pairwiseScorePair):
+// luck barely moves ratings and every pair converges to a stable gap. Exactly zero-sum.
 export const ELO_LIVE_HAND_WEIGHT = 0.25;
 export const ELO_EXIT_WEIGHT = 0.6;
 export const ELO_WARMUP_SESSIONS = 20;
 
 // Tick budget
 export const TICK_WORK_MS = 30_000; // worst tick = 30s + capped timeout < 60s Vercel cap
-// B2 (staggered crons): with cron-job.org jobs at :00/:15/:30/:45 the lease only
-// needs to cover one work window, not a full minute — a shorter lease lets the
-// next staggered worker start immediately instead of no-oping.
-export const LEASE_MS = 35_000;
+// The lease MUST exceed a worst-case tick (30s budget + decision timeout
+// headroom ≈ 58s) or two ticks overlap and patch model rows from stale
+// snapshots — stats zeroing / counter inflation. 65s still lets a 1-minute
+// cron chain immediately after a long tick.
+export const LEASE_MS = 65_000;
 export const DECISION_TIMEOUT_MS = 28_000; // thinking models need room; timeout = house folds
 // Clock violation: a model with this many timeouts and ZERO successful answers
 // has never played a hand in time — stop letting it burn the whole tick budget.

@@ -61,7 +61,7 @@ export function decisionPrompt(t: TableState, la: LegalActions, bankroll: number
 
   const history = t.actionLog
     .slice(-8)
-    .map((a) => `${a.street}:${a.playerId ? a.playerId.split("/").pop() : "table"} ${a.type}${a.amount ? " " + money(a.amount) : ""}`)
+    .map((a) => `${a.street}:${a.playerId ? a.playerId.replace(/:free$/, "").split("/").pop() : "table"} ${a.type}${a.amount ? " " + money(a.amount) : ""}`)
     .join(" | ");
 
   return [

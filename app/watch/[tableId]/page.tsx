@@ -4,7 +4,7 @@ import { use, useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import PokerTable, { TableView } from "@/components/PokerTable";
 import CardModeToggle, { useCardMode } from "@/components/CardModeToggle";
-import { money, timeAgo, cardParts } from "@/lib/format";
+import { money, timeAgo, cardParts, shortModelName } from "@/lib/format";
 
 interface StateResponse {
   tables: TableView[];
@@ -41,8 +41,12 @@ const STREET_LABEL: Record<string, string> = {
   payout: "Payout",
 };
 
+function shortName(pid: string): string {
+  return shortModelName(pid);
+}
+
 function ActionLine({ a }: { a: FeedAction }) {
-  const who = a.playerId ? a.playerId.split("/").pop() : "dealer";
+  const who = a.playerId ? shortName(a.playerId) : "dealer";
   const verb =
     a.type === "post"
       ? `${a.note === "SB" ? "posts small blind" : "posts big blind"}`
@@ -95,14 +99,13 @@ export default function TableDetailPage({ params }: { params: Promise<{ tableId:
   const load = useCallback(async () => {
     try {
       const [st, hd] = await Promise.all([
-        fetch(`/api/state?log=200`, { cache: "no-store" }).then((r) => r.json()),
+        fetch(`/api/state?log=200&t=${Date.now()}`, { cache: "no-store" }).then((r) => r.json()),
         fetch(`/api/hands?limit=20&sessionId=${encodeURIComponent(tableId)}`, { cache: "no-store" }).then((r) => r.json()),
       ]);
       setMeta(st);
       setSessionHands(hd.hands ?? []);
       const t = (st.tables ?? []).find((x: TableView) => x.tableId === tableId) ?? null;
-      if (!t && (st.tables ?? []).length >= 0) setGone(true);
-      else setGone(false);
+      setGone(!t);
       setTable(t);
       if (t) setBuyIns(((t as any).buyIns ?? {}) as Record<string, number>);
     } catch {
@@ -139,8 +142,6 @@ export default function TableDetailPage({ params }: { params: Promise<{ tableId:
     );
   }
 
-  const bb = 5; // display-only fallback
-  void bb;
   const seats = table.players.filter((p) => !p.satOut);
   const feed = (table.actionLog ?? []) as FeedAction[];
 
@@ -154,7 +155,7 @@ export default function TableDetailPage({ params }: { params: Promise<{ tableId:
           <div>
             <h1 className="font-display text-3xl font-black gold-text">{(table as any).roomName ?? table.tierName}</h1>
             <p className="font-mono text-[11px] text-cream-dim">
-              <span className="text-neon">● live</span> · hand {table.handNumber + 1} · {table.street} ·
+              <span className="text-neon">● live</span> · hand {table.handNumber + 1} · {table.street} · ${(table as any).sb ?? '?'}/{(table as any).bb ?? '?'} ·
               pot {money(table.potDisplay ?? table.pot)} · tick {timeAgo(meta.lastTickAt)}
             </p>
           </div>
@@ -270,7 +271,7 @@ export default function TableDetailPage({ params }: { params: Promise<{ tableId:
                   })}
                 </span>
                 <span className="min-w-0 flex-1 truncate text-cream-dim">
-                  {h.winners.map((w) => w.split("/").pop()).join(", ")}{" "}
+                  {h.winners.map((w) => shortName(w)).join(", ")}{" "}
                   <span className="text-gold-300">{money(h.pot)}</span>
                 </span>
                 {h.showdown && <span className="rounded bg-gold-500/15 px-1 text-[9px] text-gold-300">SD</span>}

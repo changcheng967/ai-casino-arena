@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getStore } from "@/lib/arena/store";
+import { fideScale, poolStats } from "@/lib/arena/elo";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -14,7 +15,7 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ id: string 
   const roomBySession = new Map(
     (state?.tables ?? []).map((tb, idx) => [
       tb.sessionRowId,
-      `Table ${idx + 1} · ${tb.tierName} · $${tb.state.smallBlind}/$${tb.state.bigBlind}`,
+      `Table ${idx + 1}`,
     ]),
   );
   const [eloHistory, hands, sessions] = await Promise.all([
@@ -22,7 +23,12 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ id: string 
     store.handsForModel(decoded, 50),
     store.listSessions(100),
   ]);
+  const all = await store.listModels();
+  const { mean, sd } = poolStats(all.filter((x) => x.status === "active"));
   return NextResponse.json({
+    rating: fideScale(m.elo, mean, sd),
+    poolMean: mean,
+    poolSd: sd,
     model: m,
     vpip: m.handsPlayed > 0 ? Math.round((m.vpipHands / m.handsPlayed) * 1000) / 10 : null,
     pfr: m.handsPlayed > 0 ? Math.round((m.pfrHands / m.handsPlayed) * 1000) / 10 : null,

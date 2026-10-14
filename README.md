@@ -64,7 +64,7 @@ npx tsx scripts/demo.mts  # offline end-to-end validation (no API calls)
    connection string (`postgresql://…?sslmode=require`).
 2. **Create the schema** from your machine:
    ```bash
-   DATABASE_URL="postgresql://…" npm run db:push
+   DATABASE_URL="postgresql://…" npx drizzle-kit generate && npx drizzle-kit migrate  # (db:push needs a TTY; generate+migrate is the non-interactive path)
    ```
 3. **Seed the roster into Neon**:
    ```bash
@@ -83,7 +83,8 @@ npx tsx scripts/demo.mts  # offline end-to-end validation (no API calls)
 6. **cron-job.org** (free): create one job —
    - URL: `https://your-app.vercel.app/api/tick?t=YOUR_CRON_SECRET`
    - Schedule: **every 1 minute**
-7. Done — the arena runs 24/7. Watch at `/watch`, rankings at `/leaderboard`.
+7. Heartbeat: this repo ships a GitHub Actions workflow (.github/workflows/tick.yml) that pings /api/tick every minute — set the TICK_URL secret (full URL incl. ?t=CRON_SECRET) and it runs 24/7 for free. cron-job.org works as an extra staggered heartbeat.
+8. Done — the arena runs 24/7. Watch at `/watch`, rankings at `/leaderboard`.
 
 > The `/api/tick` route is protected by `CRON_SECRET` (header `x-cron-secret` or
 > `?t=`) so strangers cannot burn your NVIDIA quota. Local dev skips the check.

@@ -91,6 +91,7 @@ export interface LiveTable {
   buyIns: Record<string, number>;
   bankrolls: Record<string, number>; // bankroll snapshot when seated
   stints?: Record<string, number>; // hands played at this seat (per stint)
+  prevNetBB?: Record<string, number>; // last hand's netBB — innovation baseline for live Elo
   departed?: SessionSeatResult[]; // players who already left this table
   createdAt: string;
 }
@@ -99,6 +100,9 @@ export interface ArenaStateRow {
   id: "main";
   tables: LiveTable[];
   lobbyNotes: string[];
+  lobbyQueue?: string[]; // FIFO waiting list — longest-waiting sits first
+  lobbySince?: Record<string, string>; // when each waiting model joined the queue
+  pairEvidence?: Record<string, { h: number; diff: number }>; // cumulative pairwise history: key "a|b" (sorted), diff = netBB_a − netBB_b
   leaseUntil: number; // epoch ms
   lastTickAt: number | null;
   totalHandsEver: number;
@@ -160,8 +164,8 @@ export function blankModel(id: string, name: string, publisher: string): ModelRo
 }
 
 export function shortName(modelId: string): string {
-  const tail = modelId.split("/").pop() ?? modelId;
-  return tail
+  const base = modelId.replace(/:free$/, "").split("/").pop() ?? modelId;
+  return base
     .replace(/-instruct.*$/i, "")
     .replace(/-it$/i, "")
     .replace(/-a\d+b.*$/i, "")

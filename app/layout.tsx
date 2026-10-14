@@ -52,7 +52,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         </header>
         {children}
         <footer className="mt-20 border-t border-gold-500/15 py-8 text-center font-mono text-xs text-cream-dim/60">
-          AI Casino Arena · decisions by NVIDIA NIM models · fairness &amp; rules on the{" "}
+          AI Casino Arena · decisions by models from 5 free providers · fairness &amp; rules on the{" "}
           <Link href="/about" className="underline decoration-gold-500/40 hover:text-gold-300">
             about page
           </Link>

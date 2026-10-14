@@ -38,22 +38,32 @@ function normalCdf(z: number): number {
   return z >= 0 ? p : 1 - p;
 }
 
+// Edge prior: typical per-hand bb edges in this pool. Sane LLMs run 0.2–1bb/h;
+// degenerate strategies (fold-bots, shove-bots) reach 10–20bb/h. A prior std
+// of 3bb/h balances both → h0 = 2·(σ/τ0)² = 72 common hands to half-unshrink
+// (~6 shared stints), matching poker's information physics.
+export const EDGE_PRIOR_TAU = 3;
+
 /**
- * Confidence score that `a` is genuinely outperforming `b`, in [0,1].
+ * Confidence score that `a` is genuinely outperforming `b`, in [0.5, 1) side.
  *
- * z = (netBB_a − netBB_b) / (σ · √(h_a + h_b)) — the gap measured in units of
- * poker's per-hand luck. A one-hand luck spike lands near z≈0.5·σ·√2 → small S;
- * the same gap sustained over dozens of hands → S→1. Symmetric: S(a,b) = 1 − S(b,a).
+ * SHRUNK EFFECT-SIZE estimator (not a significance test): estimate the pair's
+ * long-run per-hand edge from their CUMULATIVE common-hand history
+ * (netBB diff / hands), shrink it toward the "no edge" prior by precision
+ * weighting λ = τ0²/(τ0² + 2σ²/h), and convert to an implied single-hand win
+ * probability with a FIXED noise scale σ_d = σ·√2. Because the divisor does
+ * not shrink with evidence, S converges to a stable fixed point where S = E —
+ * ratings between long-running pairs stop at the true gap instead of walking
+ * to ±∞. A 2-hand luck spike shrinks to S≈0.50; a sustained 0.9bb/h edge
+ * settles at S≈0.51; a 15bb/h degenerate reaches S≈0.56 and keeps paying.
  */
-export function pairwiseScore(
-  netBBa: number,
-  handsA: number,
-  netBBb: number,
-  handsB: number,
-): number {
-  const ha = Math.max(1, handsA);
-  const hb = Math.max(1, handsB);
-  const z = (netBBa - netBBb) / (POKER_SIGMA_BB * Math.sqrt(ha + hb));
+export function pairwiseScorePair(netDiffBB: number, commonHands: number): number {
+  const h = Math.max(0, commonHands);
+  if (h < 1) return 0.5;
+  const raw = netDiffBB / h; // best point estimate of the per-hand edge
+  const lambda = (EDGE_PRIOR_TAU * EDGE_PRIOR_TAU) / (EDGE_PRIOR_TAU * EDGE_PRIOR_TAU + (2 * POKER_SIGMA_BB * POKER_SIGMA_BB) / h);
+  const sigmaD = POKER_SIGMA_BB * Math.SQRT2;
+  const z = (lambda * raw) / sigmaD;
   return Math.min(0.999, Math.max(0.001, normalCdf(z)));
 }
 
@@ -110,4 +120,25 @@ export function eloDeltas(players: EloPlayer[], ranks: Map<string, number>): Map
 /** Zero-sum check helper: sum of deltas is exactly 0 (pair-averaged K). */
 export function applyDeltas(players: EloPlayer[], deltas: Map<string, number>): EloPlayer[] {
   return players.map((p) => ({ ...p, rating: Math.round((p.rating + (deltas.get(p.id) ?? 0)) * 100) / 100 }));
+}
+
+/**
+ * Spectator-facing FIDE-flavored scale, derived from the fair zero-sum arena
+ * Elo: rating = 1500 + 200 · z where z is the model's standard score within
+ * the active pool. Ordering is identical to arena Elo, but the numbers are
+ * familiar and unbounded — a dominant model climbs past 2000+ as the pool's
+ * skill spread grows, weak ones sink below 1300. Pure display: no drift, no
+ * inflation, the raw zero-sum Elo remains the engine of record.
+ */
+export function fideScale(elo: number, poolMean: number, poolSd: number): number {
+  return Math.round(1500 + (200 * (elo - poolMean)) / Math.max(1, poolSd));
+}
+
+export function poolStats(models: Array<{ elo: number }>): { mean: number; sd: number } {
+  if (models.length === 0) return { mean: 1200, sd: 1 };
+  const mean = models.reduce((a, m) => a + m.elo, 0) / models.length;
+  const variance = models.reduce((a, m) => a + (m.elo - mean) ** 2, 0) / models.length;
+  // σ floor 25: at season start everyone is 1200 — without a floor one +1 elo
+  // win would swing the display scale absurdly. 25bb ≈ one real session spread.
+  return { mean, sd: Math.max(25, Math.sqrt(variance)) };
 }

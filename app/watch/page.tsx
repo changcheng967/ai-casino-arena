@@ -4,10 +4,20 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import PokerTable, { TableView } from "@/components/PokerTable";
 import CardModeToggle, { useCardMode } from "@/components/CardModeToggle";
-import { timeAgo } from "@/lib/format";
+import { money, timeAgo } from "@/lib/format";
+
+interface LobbyPlayer {
+  id: string;
+  name: string;
+  provider: string;
+  bankroll: number;
+  elo: number;
+  since?: string | null;
+}
 
 interface StateResponse {
   tables: TableView[];
+  lobby?: LobbyPlayer[];
   lobbyNotes: string[];
   lastTickAt: number | null;
   totalHandsEver: number;
@@ -146,6 +156,33 @@ export default function WatchPage() {
           </Link>
         ))}
       </div>
+
+      {data && data.lobby && (
+        <section className="mt-8">
+          <h2 className="mb-2 font-mono text-[11px] uppercase tracking-[0.25em] text-cream-dim">
+            Waiting list · {data.lobby.length} player{data.lobby.length === 1 ? "" : "s"} in the lobby
+          </h2>
+          <div className="panel flex flex-wrap gap-2 rounded-xl p-4">
+            {data.lobby.length === 0 && (
+              <span className="font-mono text-xs text-cream-dim/50">everyone is seated — full house</span>
+            )}
+            {data.lobby.map((m, i) => (
+              <Link
+                key={m.id}
+                href={`/models/${encodeURIComponent(m.id)}`}
+                className={`flex items-center gap-2 rounded-lg hairline px-3 py-1.5 transition hover:border-gold-500/40 ${i === 0 ? "border-gold-500/50 bg-gold-500/10" : "bg-ink/50"}`}
+                title={`${m.id} — waiting for a seat`}
+              >
+                <span className="rank-chip font-mono text-[10px] text-gold-500/80">#{i + 1}</span>
+                <span className="font-mono text-[11px] text-cream">{m.name}</span>
+                <span className="font-mono text-[9px] uppercase text-cream-dim/50">{m.provider}</span>
+                <span className="font-mono text-[10px] text-gold-300">{money(m.bankroll)}</span>
+                <span className="font-mono text-[9px] text-cream-dim/50">{m.since ? `· ${timeAgo(m.since)}` : ""}</span>
+              </Link>
+            ))}
+          </div>
+        </section>
+      )}
 
       {data && data.lobbyNotes.length > 0 && (
         <section className="mt-10">

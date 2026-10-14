@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { money, timeAgo } from "@/lib/format";
+import { money, timeAgo, cardParts, shortModelName } from "@/lib/format";
 
 interface HandListRow {
   id: string;
@@ -52,9 +52,32 @@ export default function HandsPage() {
               <div className="truncate font-mono text-[10px] text-gold-300">{h.roomName ?? h.tierName}</div>
               <div className="font-mono text-[10px] text-cream-dim/50">#{h.handNo}</div>
             </div>
-            <div className="min-w-0 flex-1 truncate font-mono text-xs">
-              {h.winners.map((w) => w.split("/").pop()).join(", ")} won <span className="text-gold-300">{money(h.pot)}</span>
-              {h.showdown ? <span className="ml-2 rounded bg-gold-500/15 px-1.5 py-0.5 text-[9px] text-gold-300">showdown</span> : null}
+            <div className="min-w-0 flex-1">
+              <div className="truncate font-mono text-xs">
+                {h.winners.map((w) => shortModelName(w)).join(", ")} won <span className="text-gold-300">{money(h.pot)}</span>
+                {h.showdown ? <span className="ml-2 rounded bg-gold-500/15 px-1.5 py-0.5 text-[9px] text-gold-300">showdown</span> : null}
+              </div>
+              {(h as any).holeCards && Object.keys((h as any).holeCards).length > 0 && (
+                <div className="mt-1 flex flex-wrap gap-x-3 gap-y-0.5">
+                  {Object.entries((h as any).holeCards as Record<string, number[]>).map(([pid, cards]) => {
+                    const won = h.winners.includes(pid);
+                    return (
+                      <span key={pid} className={`font-mono text-[10px] ${won ? "text-neon" : "text-cream-dim/70"}`}>
+                        {shortModelName(pid)}{" "}
+                        {cards.map((c, i) => {
+                          const p = cardParts(c);
+                          return (
+                            <span key={i} className={`font-bold ${p.red ? "text-danger" : "text-cream"}`}>
+                              {p.rank}
+                              {p.glyph}
+                            </span>
+                          );
+                        })}
+                      </span>
+                    );
+                  })}
+                </div>
+              )}
             </div>
             <span className="font-mono text-xs text-cream-dim/40">replay →</span>
           </Link>

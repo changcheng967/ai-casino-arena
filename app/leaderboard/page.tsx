@@ -13,6 +13,7 @@ interface Row {
   status: string;
   chatCapable: boolean;
   probeNote: string | null;
+  rating?: number;
   elo: number;
   bankroll: number;
   bailouts: number;
@@ -100,8 +101,9 @@ export default function LeaderboardPage() {
             <tr>
               {th("rank", "#", "!text-left")}
               <th className="px-3 py-2.5 text-left font-mono text-[10px] uppercase tracking-wider text-cream-dim/70">Model</th>
-              {th("elo", "Elo")}
-              {th("bankroll", "Bankroll")}
+              {th("elo", "Rating")}
+              <th className="px-3 py-2.5 text-right font-mono text-[10px] uppercase tracking-wider text-cream-dim/50">Arena Elo</th>
+              {th("bankroll", "Wealth")}
               {th("netProfit", "Net profit")}
               {th("handsPlayed", "Hands")}
               <th className="px-3 py-2.5 text-right font-mono text-[10px] uppercase tracking-wider text-cream-dim/70">VPIP/PFR</th>
@@ -157,8 +159,16 @@ export default function LeaderboardPage() {
                     </>
                   )}
                 </td>
-                <td className="px-3 py-2.5 text-right font-mono text-sm text-gold-300">{Math.round(m.elo)}</td>
-                <td className="px-3 py-2.5 text-right font-mono text-sm text-cream">{money(m.bankroll)}</td>
+                <td className="px-3 py-2.5 text-right font-mono text-sm text-gold-300" title="FIDE-flavored display scale (pool mean 1500, ±200 per σ)">
+                  {m.rating ?? Math.round(m.elo)}
+                </td>
+                <td className="px-3 py-2.5 text-right font-mono text-xs text-cream-dim/70">{Math.round(m.elo)}</td>
+                <td className="px-3 py-2.5 text-right font-mono text-sm text-cream" title={(m as any).inPlay ? `${money((m as any).inPlay)} in play` : ""}>
+                  {money((m as any).totalWealth ?? m.bankroll)}
+                  {(m as any).inPlay > 0 && (
+                    <span className="ml-1.5 text-[9px] text-gold-500/70">{money((m as any).inPlay)} in play</span>
+                  )}
+                </td>
                 <td className={`px-3 py-2.5 text-right font-mono text-sm ${m.netProfit >= 0 ? "text-neon" : "text-danger"}`}>
                   {money(m.netProfit)}
                 </td>
@@ -170,13 +180,13 @@ export default function LeaderboardPage() {
                   {m.bailouts > 0 ? <span className="text-danger">{m.bailouts}×</span> : <span className="text-cream-dim/40">—</span>}
                 </td>
                 <td className="px-3 py-2.5 text-right font-mono text-xs text-cream-dim">
-                  {m.handsPlayed > 0 ? `${Math.round((m.malformed / Math.max(1, m.handsPlayed * 4)) * 1000) / 10}%` : "—"}
+                  {m.handsPlayed >= 10 ? `${Math.round((m.malformed / Math.max(1, m.handsPlayed * 4)) * 1000) / 10}%` : "—"}
                 </td>
               </tr>
             ))}
             {view.length === 0 && (
               <tr>
-                <td colSpan={9} className="p-10 text-center font-mono text-xs text-cream-dim">
+                <td colSpan={10} className="p-10 text-center font-mono text-xs text-cream-dim">
                   nothing matches
                 </td>
               </tr>
