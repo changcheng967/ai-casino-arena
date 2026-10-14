@@ -23,8 +23,8 @@ export const DEFAULT_BUYIN_BBS = 100;
 export const ELO_START = 1200;
 // Dynamic Elo — everything scales with evidence, no fixed steps:
 // K = ELO_K_MAX / (1 + careerHands / ELO_HANDS_HALF), clamped to [ELO_K_MIN, ELO_K_MAX].
-// New players move fast (K≈120); established ratings stabilize smoothly (K→32).
-export const ELO_K_MAX = 120;
+// New players move fast (K≈160); established ratings stabilize smoothly (K→32).
+export const ELO_K_MAX = 160;
 export const ELO_K_MIN = 32;
 export const ELO_HANDS_HALF = 300; // career hands at which K has halved
 export const POKER_SIGMA_BB = 18; // per-hand net-BB luck scale (6-max NLHE, 100bb)
@@ -37,15 +37,15 @@ export const ELO_EXIT_WEIGHT = 0.6;
 export const ELO_WARMUP_SESSIONS = 20;
 
 // Tick budget
-export const TICK_WORK_MS = 25_000; // short + chainable: with a 30s cron interval each
-// tick finishes (~25s + overhead) right as the next fires → near-continuous
-// play; with a 60s interval it simply leaves more idle air. Worst tick stays
-// well under the 60s Vercel cap either way.
+export const TICK_WORK_MS = 180_000; // 3-minute work windows (Vercel Fluid allows 300s):
+// one invocation works ~3 min, the 5s poller starts the next almost
+// immediately → ~98% duty, no pauses. Worst tick = 180s + one decision
+// timeout (28s) = 208s < 300s cap.
 // The lease MUST exceed a worst-case tick (30s budget + decision timeout
 // headroom ≈ 58s) or two ticks overlap and patch model rows from stale
 // snapshots — stats zeroing / counter inflation. 65s still lets a 1-minute
 // cron chain immediately after a long tick.
-export const LEASE_MS = 65_000;
+export const LEASE_MS = 215_000; // must exceed worst tick runtime (~208s)
 export const DECISION_TIMEOUT_MS = 28_000; // thinking models need room; timeout = house folds
 // Clock violation: a model with this many timeouts and ZERO successful answers
 // has never played a hand in time — stop letting it burn the whole tick budget.

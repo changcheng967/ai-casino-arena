@@ -39,11 +39,10 @@ function normalCdf(z: number): number {
 }
 
 // Edge prior: typical per-hand bb edges in this pool. Sane LLMs run 0.2–1bb/h;
-// degenerate strategies (fold-bots, shove-bots) reach 10–20bb/h. τ0=6 widens
-// the prior so evidence weighs ~4× earlier (h0 = 2·(σ/τ0)² = 18 common hands
-// to half-unshrink) — livelier early movement while keeping the fixed-point
-// guarantee and exact zero-sum. Raise toward 9 for even faster response.
-export const EDGE_PRIOR_TAU = 6;
+// degenerate strategies (fold-bots, shove-bots) reach 10–20bb/h. τ0=9 leans
+// hot: h0 = 2·(σ/τ0)² = 8 common hands to half-unshrink — chess-scale
+// per-hand movement early, fixed-point guarantee and exact zero-sum intact.
+export const EDGE_PRIOR_TAU = 9;
 
 /**
  * Confidence score that `a` is genuinely outperforming `b`, in [0.5, 1) side.

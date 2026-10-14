@@ -3,7 +3,7 @@ import { runTick } from "@/lib/arena/tick";
 import { getStore } from "@/lib/arena/store";
 
 export const runtime = "nodejs";
-export const maxDuration = 60;
+export const maxDuration = 300; // Vercel Fluid Hobby max
 
 // cron-job.org pings this every minute with ?t=CRON_SECRET
 export async function GET(req: NextRequest) {
