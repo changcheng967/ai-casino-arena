@@ -128,6 +128,12 @@ export interface ArenaRepo {
   listSessions(limit: number): Promise<SessionRow[]>;
   arenaStats(): Promise<{ hands: number; sessions: number }>;
   deleteModels(ids: string[]): Promise<number>;
+  /**
+   * Atomically claim the tick lease: exactly one concurrent caller wins,
+   * even if two heartbeats hit in the same millisecond. Returns the claimed
+   * state (with leaseUntil set), or null if the lease is held / on error.
+   */
+  claimTickLease(leaseUntil: number): Promise<ArenaStateRow | null>;
 }
 
 export function blankModel(id: string, name: string, publisher: string): ModelRow {

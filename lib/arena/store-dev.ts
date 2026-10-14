@@ -218,6 +218,17 @@ export class DevRepo implements ArenaRepo {
     return { hands: s.hands.length, sessions: s.sessions.length };
   }
 
+  async claimTickLease(leaseUntil: number): Promise<ArenaStateRow | null> {
+    // single-process dev store: JS check is fine (no cross-process races)
+    const s = store();
+    if (!s.arenaState) s.arenaState = { id: "main", tables: [], lobbyNotes: [], leaseUntil: 0, lastTickAt: null, totalHandsEver: 0, matchmakingCounter: 0 };
+    if ((s.arenaState.leaseUntil ?? 0) > Date.now()) return null;
+    s.arenaState.leaseUntil = leaseUntil;
+    s.arenaState.lastTickAt = Date.now();
+    persist(s);
+    return s.arenaState;
+  }
+
   async deleteModels(ids: string[]): Promise<number> {
     const kill = new Set(ids);
     let removed = 0;

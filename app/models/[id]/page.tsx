@@ -106,13 +106,18 @@ function Sparkline({
           <div className="text-cream-dim/70">arena Elo {hp.elo.toFixed(1)}</div>
           <div className="text-cream-dim/80">
             {hover! > 0 ? (
-              <>
-                <span className={hp.elo >= points[hover! - 1].elo ? "text-neon" : "text-danger"}>
-                  {hp.elo >= points[hover! - 1].elo ? "+" : ""}
-                  {(hp.elo - points[hover! - 1].elo).toFixed(1)}
-                </span>{" "}
-                vs previous
-              </>
+              (() => {
+                const d = scale(hp.elo) - scale(points[hover! - 1].elo);
+                return (
+                  <>
+                    <span className={d >= 0 ? "text-neon" : "text-danger"}>
+                      {d >= 0 ? "+" : ""}
+                      {d.toFixed(1)}
+                    </span>{" "}
+                    vs previous
+                  </>
+                );
+              })()
             ) : (
               "season start"
             )}{" "}
@@ -122,7 +127,7 @@ function Sparkline({
       )}
       <div className="mt-1 flex justify-between font-mono text-[9px] text-cream-dim/50">
         <span>{timeAgo(t0)}</span>
-        <span className="text-gold-500/70">··· 1200 start ··· hover the line for values ···</span>
+        <span className="text-gold-500/70">··· 1500 = pool average ··· hover for values ···</span>
         <span>
           {vals[0].toFixed(0)} → <span className={up ? "text-neon" : "text-danger"}>{vals[vals.length - 1].toFixed(0)}</span> · {timeAgo(t1)}
         </span>

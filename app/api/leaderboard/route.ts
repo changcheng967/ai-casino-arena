@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getStore } from "@/lib/arena/store";
 import { fideScale, poolStats } from "@/lib/arena/elo";
+import { sql } from "drizzle-orm";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -12,6 +13,18 @@ export async function GET() {
   // fair wealth: seated players' chips on the felt count too, otherwise a
   // model deep in a winning session looks poorer than a lobby idler
   const state = await store.getArenaState();
+  // most recent settlement delta per model, for ▲/▼ movement arrows
+  let lastDelta = new Map<string, number>();
+  try {
+    const hist = await (store as any).db?.execute?.(
+      // Neon-only fast path; dev store simply shows no arrows
+      Object.assign(sql`SELECT DISTINCT ON (model_id) model_id, delta FROM elo_history ORDER BY model_id, created_at DESC`),
+    );
+    const rows = (hist as any)?.rows ?? hist ?? [];
+    for (const r of rows) lastDelta.set(r.model_id, Number(r.delta));
+  } catch {
+    lastDelta = new Map();
+  }
   const inPlay = new Map<string, number>();
   for (const tb of state?.tables ?? []) {
     for (const pl of tb.state.players) {
@@ -34,6 +47,7 @@ export async function GET() {
         probeNote: (m as any).probeNote ?? null,
         elo: m.elo,
         rating: fideScale(m.elo, mean, sd),
+        lastDelta: lastDelta.get(m.id) ?? null,
         bankroll: m.bankroll,
         inPlay: inPlay.get(m.id) ?? 0,
         totalWealth: m.bankroll + (inPlay.get(m.id) ?? 0),

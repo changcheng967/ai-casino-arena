@@ -174,6 +174,23 @@ export class NeonRepo implements ArenaRepo {
     })) as SessionRow[];
   }
 
+  async claimTickLease(leaseUntil: number): Promise<ArenaStateRow | null> {
+    const now = Date.now();
+    // single-statement atomic claim: the WHERE guard on the old lease makes
+    // exactly one of N concurrent callers the winner
+    const rows = await this.db.execute(sql`
+      INSERT INTO arena_state (id, data, updated_at)
+      VALUES ('main', ${JSON.stringify({ id: "main", tables: [], lobbyNotes: [], leaseUntil, lastTickAt: now, totalHandsEver: 0, matchmakingCounter: 0 })}::jsonb, now())
+      ON CONFLICT (id) DO UPDATE
+        SET data = jsonb_set(arena_state.data, '{leaseUntil}', ${JSON.stringify(leaseUntil)}::jsonb, true),
+            updated_at = now()
+        WHERE (arena_state.data->>'leaseUntil')::bigint < ${now}
+      RETURNING data
+    `);
+    const row = (rows as any).rows?.[0] ?? (rows as any)[0];
+    return row ? (row.data as ArenaStateRow) : null;
+  }
+
   async deleteModels(ids: string[]): Promise<number> {
     if (ids.length === 0) return 0;
     await this.db.delete(schema.models).where(inArray(schema.models.id, ids));

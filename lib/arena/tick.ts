@@ -725,15 +725,16 @@ export async function runTick(repo: ArenaRepo, opts?: { budgetMs?: number }): Pr
     ms: 0,
   };
 
-  let state = (await repo.getArenaState()) ?? freshState();
-  if (state.leaseUntil > Date.now()) {
-    report.reason = `lease held until ${new Date(state.leaseUntil).toISOString()}`;
+  // ATOMIC claim: exactly one concurrent heartbeat wins, even at the same
+  // millisecond — no overlap, no stale-write contamination, ever
+  const claimed = await repo.claimTickLease(Date.now() + LEASE_MS);
+  if (!claimed) {
+    report.reason = "lease held";
     report.ms = Date.now() - startedAt;
     return report;
   }
-  state.leaseUntil = Date.now() + LEASE_MS;
-  state.lastTickAt = Date.now();
-  await repo.saveArenaState(state); // claim
+  let state = claimed;
+  if (!state.tables) state = { ...freshState(), leaseUntil: state.leaseUntil };
 
   const models = await repo.listModels();
   const modelMap = new Map(models.map((m) => [m.id, m]));

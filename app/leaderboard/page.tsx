@@ -161,6 +161,11 @@ export default function LeaderboardPage() {
                 </td>
                 <td className="px-3 py-2.5 text-right font-mono text-sm text-gold-300" title="FIDE-flavored display scale (pool mean 1500, ±200 per σ)">
                   {m.rating ?? Math.round(m.elo)}
+                  {typeof (m as any).lastDelta === "number" && Math.abs((m as any).lastDelta) >= 0.05 && (
+                    <span className={`ml-1 text-[9px] ${(m as any).lastDelta > 0 ? "text-neon" : "text-danger"}`}>
+                      {(m as any).lastDelta > 0 ? "▲" : "▼"}
+                    </span>
+                  )}
                 </td>
                 <td className="px-3 py-2.5 text-right font-mono text-xs text-cream-dim/70">{Math.round(m.elo)}</td>
                 <td className="px-3 py-2.5 text-right font-mono text-sm text-cream" title={(m as any).inPlay ? `${money((m as any).inPlay)} in play` : ""}>

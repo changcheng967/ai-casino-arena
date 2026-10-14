@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { money, timeAgo } from "@/lib/format";
 
@@ -38,6 +38,8 @@ export default function Home() {
   const [activeCount, setActiveCount] = useState(0);
   const [state, setState] = useState<StateLite | null>(null);
 
+  const paceRef = useRef<Array<{ t: number; hands: number }>>([]);
+  const [pace, setPace] = useState<number | null>(null);
   useEffect(() => {
     const load = async () => {
       const [lb, st] = await Promise.all([
@@ -47,6 +49,14 @@ export default function Home() {
       setTop((lb.models ?? []).filter((m: LBModel) => m.status === "active").slice(0, 5));
       setActiveCount((lb.models ?? []).filter((m: LBModel) => m.status === "active").length);
       setState(st);
+      // rolling 10-minute pace from total-hand snapshots
+      const now = Date.now();
+      const hands = st?.totalHandsEver ?? 0;
+      paceRef.current = [...paceRef.current.filter((x) => now - x.t < 600_000), { t: now, hands }];
+      const oldest = paceRef.current[0];
+      if (oldest && now - oldest.t >= 60_000) {
+        setPace(Math.round(((hands - oldest.hands) / ((now - oldest.t) / 60_000)) * 10));
+      }
     };
     void load();
     const id = setInterval(load, 10_000);
@@ -101,11 +111,12 @@ export default function Home() {
       </section>
 
       {/* stats strip */}
-      <section className="grid grid-cols-2 gap-3 md:grid-cols-5">
+      <section className="grid grid-cols-2 gap-3 md:grid-cols-6">
         {[
           ["Live tables", String(state?.tables.length ?? 0)],
           ["Players seated", String((state?.tables ?? []).reduce((a, t) => a + t.players.length, 0))],
           ["Hands played", String(state?.totalHandsEver ?? 0)],
+          ["Pace (10 min)", pace === null ? "warming up…" : `${pace} hands`],
           ["Money on the felt", money(onTheFelt)],
           ["Last heartbeat", timeAgo(state?.lastTickAt ?? null)],
         ].map(([label, value]) => (
