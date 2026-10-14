@@ -54,7 +54,7 @@ export const CLOCK_VIOLATION_MIN = 4;
 export const CLOCK_RETRY_EVERY = 8;
 export const DECISION_RETRIES = 0;
 export const BUYIN_TIMEOUT_MS = 15_000;
-export const FORMATION_GATE_MS = 20_000; // stop forming new tables past this point in a tick
+export const FORMATION_GATE_MS = 60_000; // window for the formation loop (up to 4 tables/tick, 6 parallel buy-in asks each)
 export const LEAVE_TIMEOUT_MS = 7_000; // quick ask — rotation must not eat the tick
 // Health quarantine: this many consecutive provider outages (timeout/network/
 // HTTP) mid-game → the model cashes out and sits out in the lobby with a

@@ -831,7 +831,12 @@ export async function runTick(repo: ArenaRepo, opts?: { budgetMs?: number }): Pr
     MIN_TABLES,
     Math.min(MAX_TABLES, Math.ceil(activeCount / TABLE_SIZE)),
   );
-  if (state.tables.length < desiredTables && activeUnseated().length >= 2 && Date.now() - startedAt < FORMATION_GATE_MS) {
+  // form tables in a LOOP until the floor is at capacity — with 3-minute
+  // ticks, one-table-per-tick left the arena at 2 tables for ages after a
+  // reset while 16 players waited
+  for (let f = 0; f < 4; f++) {
+    if (state.tables.length >= desiredTables || activeUnseated().length < 2) break;
+    if (Date.now() - startedAt >= FORMATION_GATE_MS) break;
     const formed = await formTable(repo, activeUnseated(), state.matchmakingCounter++);
     if (formed) {
       state.tables.push(formed.table);
@@ -842,6 +847,8 @@ export async function runTick(repo: ArenaRepo, opts?: { budgetMs?: number }): Pr
         seatedIds.add(id);
       }
       report.tablesFormed++;
+    } else {
+      break; // formation failed (budget/picks) — don't spin
     }
   }
 
