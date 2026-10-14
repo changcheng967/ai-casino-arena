@@ -21,11 +21,27 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
   const store = await getStore();
+  // Respond immediately and advance the arena in the background: a tick works
+  // 30-60s by design, which trips cron services' test timeouts. waitUntil
+  // keeps the function alive until the tick finishes; the DB lease still
+  // serializes overlapping ticks. Falls back to inline execution outside
+  // Vercel (local dev).
+  const work = runTick(store)
+    .then((report) => {
+      if (!report.ran) console.log("tick skipped:", report.reason);
+      return report;
+    })
+    .catch((e: any) => {
+      console.error("tick failed:", e?.message ?? e);
+      return { ran: false, error: String(e?.message ?? e) };
+    });
   try {
-    const report = await runTick(store);
+    const { waitUntil } = await import("@vercel/functions");
+    waitUntil(work);
+    return NextResponse.json({ ok: true, queued: true });
+  } catch {
+    const report = await work;
     return NextResponse.json({ ok: true, ...report });
-  } catch (e: any) {
-    return NextResponse.json({ ok: false, error: String(e?.message ?? e) }, { status: 500 });
   }
 }
 
