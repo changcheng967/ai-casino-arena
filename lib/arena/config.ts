@@ -37,7 +37,10 @@ export const ELO_EXIT_WEIGHT = 0.6;
 export const ELO_WARMUP_SESSIONS = 20;
 
 // Tick budget
-export const TICK_WORK_MS = 30_000; // worst tick = 30s + capped timeout < 60s Vercel cap
+export const TICK_WORK_MS = 25_000; // short + chainable: with a 30s cron interval each
+// tick finishes (~25s + overhead) right as the next fires → near-continuous
+// play; with a 60s interval it simply leaves more idle air. Worst tick stays
+// well under the 60s Vercel cap either way.
 // The lease MUST exceed a worst-case tick (30s budget + decision timeout
 // headroom ≈ 58s) or two ticks overlap and patch model rows from stale
 // snapshots — stats zeroing / counter inflation. 65s still lets a 1-minute
