@@ -107,7 +107,7 @@ export default function TableDetailPage({ params }: { params: Promise<{ tableId:
       const t = (st.tables ?? []).find((x: TableView) => x.tableId === tableId) ?? null;
       setGone(!t);
       setTable(t);
-      if (t) setBuyIns(((t as any).buyIns ?? {}) as Record<string, number>);
+      if (t) setBuyIns((t.buyIns ?? {}) as Record<string, number>);
     } catch {
       /* transient */
     }
@@ -142,7 +142,6 @@ export default function TableDetailPage({ params }: { params: Promise<{ tableId:
     );
   }
 
-  const seats = table.players.filter((p) => !p.satOut);
   const feed = (table.actionLog ?? []) as FeedAction[];
 
   return (
@@ -153,9 +152,9 @@ export default function TableDetailPage({ params }: { params: Promise<{ tableId:
             ← floor
           </Link>
           <div>
-            <h1 className="font-display text-3xl font-black gold-text">{(table as any).roomName ?? table.tierName}</h1>
+            <h1 className="font-display text-3xl font-black gold-text">{table.roomName ?? table.tierName}</h1>
             <p className="font-mono text-[11px] text-cream-dim">
-              <span className="text-neon">● live</span> · hand {table.handNumber + 1} · {table.street} · ${(table as any).sb ?? '?'}/{(table as any).bb ?? '?'} ·
+              <span className="text-neon">● live</span> · hand {table.handNumber + 1} · {table.street} · ${table.sb ?? '?'}/${table.bb ?? '?'} ·
               pot {money(table.potDisplay ?? table.pot)} · tick {timeAgo(meta.lastTickAt)}
             </p>
           </div>

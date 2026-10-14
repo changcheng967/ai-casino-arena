@@ -67,7 +67,7 @@ export default function LeaderboardPage() {
     if (!showAll) r = r.filter((x) => x.status === "active" || x.status === "quarantined");
     if (q) {
       const s = q.toLowerCase();
-      r = r.filter((x) => x.id.toLowerCase().includes(s) || x.publisher.toLowerCase().includes(s));
+      r = r.filter((x) => x.id.toLowerCase().includes(s) || x.publisher.toLowerCase().includes(s) || x.name.toLowerCase().includes(s));
     }
     if (sort !== "rank") {
       const val = (x: Row): number => {
@@ -90,7 +90,10 @@ export default function LeaderboardPage() {
   const th = (key: SortKey, label: string, cls = "") => (
     <th
       onClick={() => {
-        if (sort === key) {
+        if (key === "rank") {
+          setSort("rank");
+          setDir(1);
+        } else if (sort === key) {
           if (dir === 1) setDir(-1);
           else {
             setSort("rank");

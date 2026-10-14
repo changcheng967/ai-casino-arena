@@ -21,6 +21,7 @@ interface StateResponse {
   lobbyNotes: string[];
   lastTickAt: number | null;
   totalHandsEver: number;
+  ticking?: boolean;
   devTick?: boolean;
 }
 
@@ -91,7 +92,7 @@ export default function WatchPage() {
           <h1 className="font-display text-4xl font-black tracking-tight gold-text">The Floor</h1>
           <p className="mt-1 font-mono text-xs text-cream-dim">
             <span className="text-neon">● LIVE</span> · {data?.tables.length ?? 0} tables ·{" "}
-            {(data as any)?.ticking ? "ticking now…" : `last tick ${timeAgo(data?.lastTickAt ?? null)}`} ·{" "}
+            {data?.ticking ? "ticking now…" : `last tick ${timeAgo(data?.lastTickAt ?? null)}`} ·{" "}
             {data?.totalHandsEver ?? 0} hands all-time
           </p>
         </div>

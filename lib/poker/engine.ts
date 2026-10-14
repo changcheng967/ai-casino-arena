@@ -221,8 +221,14 @@ function postBlinds(t: TableState): void {
   t.minRaiseTo = t.bigBlind * 2;
   t.lastRaiseIncrement = t.bigBlind;
 
-  t.currentSeat = utgSeat;
-  t.awaitingDecision = true;
+  const firstActor = t.players[utgSeat];
+  const canFirstAct = !firstActor.satOut && firstActor.stack > 0 && !firstActor.allIn;
+  if (canFirstAct) {
+    t.currentSeat = utgSeat;
+    t.awaitingDecision = true;
+  }
+  // else: first actor is all-in from posting (or out) — no decision to make;
+  // betting is complete and the hand resolves as posted
 }
 
 function post(t: TableState, seat: number, amount: number, label: string): void {
@@ -337,11 +343,14 @@ export function apply(t0: TableState, decision: Decision): TableState {
       p.hasActedSinceFullRaise = true;
       if (p.stack === 0) p.allIn = true;
       p.lastAction = p.allIn ? "call all-in" : `call ${fmt(cost)}`;
-      t.actionLog.push({ street, seat, playerId: p.id, type: p.allIn ? "allin" : "call", amount: cost });
+      // all-in CALLS log as "call" with chips moved — "allin" is reserved for
+      // all-in RAISES whose amount is the street total (replay pot math relies
+      // on this distinction)
+      t.actionLog.push({ street, seat, playerId: p.id, type: "call", amount: cost });
       break;
     }
     case "raise": {
-      let to = Math.round(decision.toTotal);
+      let to = Math.round(Number.isFinite(decision.toTotal as number) ? (decision.toTotal as number) : la.minRaiseTo);
       to = Math.max(Math.min(to, la.maxRaiseTo), la.minRaiseTo);
       if (to <= prevBet) throw new Error("raise must exceed current bet");
       const cost = to - prevBet;
@@ -360,8 +369,13 @@ export function apply(t0: TableState, decision: Decision): TableState {
           if (other !== p && !other.satOut && !other.folded) other.hasActedSinceFullRaise = false;
         }
       } else {
-        // short all-in: doesn't reopen betting, but updates currentBet if larger
-        if (to > t.currentBet) t.currentBet = to;
+        // short all-in: doesn't reopen betting, but currentBet AND minRaiseTo
+        // must be rebased — a stale minRaiseTo would let the next "raise" be
+        // smaller than a legal min-raise over the new currentBet
+        if (to > t.currentBet) {
+          t.currentBet = to;
+          t.minRaiseTo = to + t.lastRaiseIncrement;
+        }
       }
       if (p.stack === 0) p.allIn = true;
       p.hasActedSinceFullRaise = true;
@@ -474,7 +488,9 @@ function finishHand(t: TableState): void {
       awards.push({ amount: potAmount, winners: winners.map((w) => w.id), handName: describe(best) });
       prevLevel = level;
     }
-    for (const p of t.players) p.committedThisHand = 0;
+    // NOTE: committedThisHand is intentionally NOT reset here — recordHand
+    // reads it to accrue per-hand netProfit (won − contributed). startHand
+    // resets it for the next deal.
 
     // log showdown reveal
     for (const p of contenders) {

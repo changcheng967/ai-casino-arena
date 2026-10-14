@@ -26,6 +26,8 @@ export interface TableView {
   tableId: string;
   tierName: string;
   roomName?: string;
+  sb?: number;
+  bb?: number;
   sessionId: string;
   handNumber: number;
   maxHands: number;

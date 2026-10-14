@@ -59,7 +59,7 @@ export async function GET(req: Request) {
             // like a televised final table (showdown mode only; god sees all)
             const alive = t.state.players.filter((x) => !x.folded && x.holeCards.length === 2);
             const allInShowdown =
-              alive.length >= 2 && alive.length <= 2 && alive.every((x) => x.allIn);
+              alive.length === 2 && alive.every((x) => x.allIn);
             const atEnd = t.state.lastHandResult?.holeCardsRevealed?.[p.id];
             const revealSource =
               atEnd ?? (allInShowdown && !p.folded ? p.holeCards : null);

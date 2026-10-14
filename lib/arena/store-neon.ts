@@ -174,6 +174,12 @@ export class NeonRepo implements ArenaRepo {
     })) as SessionRow[];
   }
 
+  async getHand(id: string): Promise<HandRow | null> {
+    const rows = await this.db.select().from(schema.hands).where(eq(schema.hands.id, id)).limit(1);
+    const r = rows[0];
+    return r ? ({ ...r, createdAt: S(r.createdAt) ?? "" }) as unknown as HandRow : null;
+  }
+
   async claimTickLease(leaseUntil: number): Promise<ArenaStateRow | null> {
     const now = Date.now();
     // single-statement atomic claim: the WHERE guard on the old lease makes
@@ -184,7 +190,7 @@ export class NeonRepo implements ArenaRepo {
       ON CONFLICT (id) DO UPDATE
         SET data = jsonb_set(arena_state.data, '{leaseUntil}', ${JSON.stringify(leaseUntil)}::jsonb, true),
             updated_at = now()
-        WHERE (arena_state.data->>'leaseUntil')::bigint < ${now}
+        WHERE coalesce((arena_state.data->>'leaseUntil')::bigint, 0) < ${now}
       RETURNING data
     `);
     const row = (rows as any).rows?.[0] ?? (rows as any)[0];

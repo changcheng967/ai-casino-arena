@@ -26,6 +26,9 @@ interface ModelDetail {
   };
   vpip: number | null;
   pfr: number | null;
+  rating?: number;
+  poolMean?: number;
+  poolSd?: number;
   eloHistory: { elo: number; delta: number; createdAt: string }[];
   sessions: {
     id: string;
@@ -207,7 +210,7 @@ export default function ModelPage({ params }: { params: Promise<{ id: string }> 
         <div className="flex gap-8 text-right">
           <div>
             <div className="font-mono text-[10px] uppercase tracking-widest text-cream-dim/60">Rating</div>
-            <div className="font-display text-4xl font-black text-gold-300">{(d as any).rating ?? Math.round(m.elo)}</div>
+            <div className="font-display text-4xl font-black text-gold-300">{d.rating ?? Math.round(m.elo)}</div>
             <div className="font-mono text-[9px] text-cream-dim/50">arena Elo {Math.round(m.elo)}</div>
           </div>
           <div>
@@ -224,7 +227,7 @@ export default function ModelPage({ params }: { params: Promise<{ id: string }> 
             {d.eloHistory.length > 0 ? `${d.eloHistory.length} settlements · updates every hand` : "awaiting first hand"}
           </span>
         </div>
-        <Sparkline points={d.eloHistory.map((h) => ({ elo: h.elo, createdAt: h.createdAt }))} poolMean={(d as any).poolMean ?? 1200} poolSd={(d as any).poolSd ?? 25} />
+        <Sparkline points={d.eloHistory.map((h) => ({ elo: h.elo, createdAt: h.createdAt }))} poolMean={d.poolMean ?? 1200} poolSd={d.poolSd ?? 25} />
       </section>
 
       <section className="mt-6 grid grid-cols-2 gap-2 sm:grid-cols-4 lg:grid-cols-7">

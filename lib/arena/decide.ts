@@ -5,7 +5,7 @@ import { z } from "zod";
 import { nimChat, extractJson, Provider } from "../nim/client";
 import { TableState, LegalActions, Decision } from "../poker/engine";
 import { systemPrompt, decisionPrompt, leaveSystemPrompt, leavePrompt } from "./prompt";
-import { DECISION_TIMEOUT_MS, DECISION_RETRIES } from "./config";
+import { DECISION_TIMEOUT_MS, DECISION_RETRIES, LEAVE_TIMEOUT_MS } from "./config";
 
 // Offline/demo mode: instant scripted decisions, no API calls.
 export const fakeLlm = () => process.env.ARENA_FAKE_LLM === "1";
@@ -36,7 +36,7 @@ export async function askLeave(args: {
       user: leavePrompt(args),
       maxTokens: 300,
       temperature: 0.6,
-      timeoutMs: 15_000,
+      timeoutMs: LEAVE_TIMEOUT_MS,
       retries: 0,
     });
     const parsed = extractJson(res.text);

@@ -35,7 +35,7 @@ async function main() {
     const id = `${r.provider ?? "nim"}:${modelRef}`;
     const base = blankModel(id, shortName(modelRef), r.provider ?? "nim");
     // a flaky cold-start on a re-probe must not bench a playing model
-    const keepActive = existing.get(id)?.status === "active";
+    const keepActive = ["active", "quarantined"].includes(existing.get(id)?.status ?? "");
     const capNote =
       r.provider === "groq" && r.chatCapable && (r as any).rpd !== undefined && (r as any).rpd !== null && Number((r as any).rpd) < 2000
         ? `groq free tier: ~${(r as any).rpd} requests/day — may nap when quota runs out`
@@ -60,7 +60,7 @@ async function main() {
       elo: ELO_START,
       bankroll: START_BANKROLL,
       status: (r.chatCapable || keepActive ? "active" : "inactive") as "active" | "inactive",
-      chatCapable: true,
+      chatCapable: r.chatCapable || keepActive,
       probeLatencyMs: r.latencyMs,
       probeNote: note,
     };

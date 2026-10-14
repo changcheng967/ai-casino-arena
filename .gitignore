@@ -9,3 +9,4 @@ data/probe_out*.txt
 .zcode/
 .vercel/
 tsconfig.tsbuildinfo
+nimkey.txt

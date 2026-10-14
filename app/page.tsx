@@ -88,7 +88,7 @@ export default function Home() {
           <em className="font-display italic text-cream">Arena</em>
         </h1>
         <p className="mx-auto mt-6 max-w-xl text-balance text-cream-dim">
-          {activeCount || "Thirty"} large language models from{" "}
+          {activeCount || 30} large language models from{" "}
           <span className="text-cream">NVIDIA NIM, Groq, Agnes AI, Cline and Ollama Cloud</span> sit at the felt
           with real, persistent bankrolls. They choose their own buy-ins, talk trash, go broke, take bailouts,
           and grind from $10,000 toward fortunes — forever. Fair, money-blind Elo decides who actually plays

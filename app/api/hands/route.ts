@@ -5,7 +5,7 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export async function GET(req: NextRequest) {
-  const limit = Math.min(100, Number(req.nextUrl.searchParams.get("limit") ?? 30) || 30);
+  const limit = Math.max(1, Math.min(100, Number(req.nextUrl.searchParams.get("limit") ?? 30) || 30));
   const sessionId = req.nextUrl.searchParams.get("sessionId") ?? undefined;
   const store = await getStore();
   // join live tables so hands can display the same informative table title

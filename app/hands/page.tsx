@@ -17,6 +17,7 @@ interface HandListRow {
   showdown: boolean;
   winners: string[];
   createdAt: string;
+  holeCards?: Record<string, number[]>;
 }
 
 export default function HandsPage() {
@@ -57,9 +58,9 @@ export default function HandsPage() {
                 {h.winners.map((w) => shortModelName(w)).join(", ")} won <span className="text-gold-300">{money(h.pot)}</span>
                 {h.showdown ? <span className="ml-2 rounded bg-gold-500/15 px-1.5 py-0.5 text-[9px] text-gold-300">showdown</span> : null}
               </div>
-              {(h as any).holeCards && Object.keys((h as any).holeCards).length > 0 && (
+              {h.holeCards && Object.keys(h.holeCards).length > 0 && (
                 <div className="mt-1 flex flex-wrap gap-x-3 gap-y-0.5">
-                  {Object.entries((h as any).holeCards as Record<string, number[]>).map(([pid, cards]) => {
+                  {Object.entries(h.holeCards as Record<string, number[]>).map(([pid, cards]) => {
                     const won = h.winners.includes(pid);
                     return (
                       <span key={pid} className={`font-mono text-[10px] ${won ? "text-neon" : "text-cream-dim/70"}`}>

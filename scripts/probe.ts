@@ -1,4 +1,4 @@
-// Probe every model on ALL providers (NVIDIA NIM + Groq Cloud + Agnes AI + Cline):
+// Probe every model on ALL providers (NIM + Groq + Agnes + Cline + Ollama):
 // can it chat and follow strict JSON? Duplicates are routed to the better
 // provider (capacity first — a 24/7 arena needs requests-per-day headroom —
 // then latency). Writes data/roster.json used to seed the arena roster.

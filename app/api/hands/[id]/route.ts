@@ -15,8 +15,8 @@ export async function GET(_req: NextRequest, ctx: { params: Promise<{ id: string
       `Table ${idx + 1}`,
     ]),
   );
-  const hands = await store.recentHands(3000);
-  const h = hands.find((x) => x.id === id);
+  const hands = await store.getHand(id);
+  const h = hands;
   if (!h) return NextResponse.json({ error: "not found" }, { status: 404 });
   return NextResponse.json({ hand: { ...h, roomName: roomBySession.get(h.sessionId) ?? `${h.tierName}` } });
 }

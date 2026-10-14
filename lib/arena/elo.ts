@@ -76,8 +76,10 @@ export function eloPairUpdate(a: EloPlayer, b: EloPlayer, score: number, weight 
   const expA = 1 / (1 + 10 ** ((b.rating - a.rating) / 400));
   const kPair = ((kDynamic(a) + kDynamic(b)) / 2) * weight;
   const dA = kPair * (score - expA);
-  const dB = kPair * ((1 - score) - (1 - expA)); // = −dA exactly
-  return [Math.round(dA * 100) / 100, Math.round(dB * 100) / 100];
+  // round ONCE and mirror — rounding both sides independently can net ±0.01
+  // (round(12.5)=13 vs round(-12.5)=-12), breaking exact zero-sum
+  const dAr = Math.round(dA * 100) / 100;
+  return [dAr, -dAr];
 }
 
 /** Rank players for a finished session. rank 1 = best. Ties share a rank. */
@@ -135,7 +137,7 @@ export function fideScale(elo: number, poolMean: number, poolSd: number): number
 }
 
 export function poolStats(models: Array<{ elo: number }>): { mean: number; sd: number } {
-  if (models.length === 0) return { mean: 1200, sd: 1 };
+  if (models.length === 0) return { mean: 1200, sd: 25 }; // respect the σ-floor
   const mean = models.reduce((a, m) => a + m.elo, 0) / models.length;
   const variance = models.reduce((a, m) => a + (m.elo - mean) ** 2, 0) / models.length;
   // σ floor 25: with chess-scale arena swings (±40/hand legit), a smaller

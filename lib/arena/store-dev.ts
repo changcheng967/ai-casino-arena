@@ -218,9 +218,14 @@ export class DevRepo implements ArenaRepo {
     return { hands: s.hands.length, sessions: s.sessions.length };
   }
 
+  async getHand(id: string): Promise<HandRow | null> {
+    return store().hands.find((h) => h.id === id) ?? null;
+  }
+
   async claimTickLease(leaseUntil: number): Promise<ArenaStateRow | null> {
-    // single-process dev store: JS check is fine (no cross-process races)
-    const s = store();
+    // fresh load-modify-write: a stale cache persist could clobber a sibling
+    // Next-dev module instance's writes (the "$6k phantom money" class)
+    const s = load();
     if (!s.arenaState) s.arenaState = { id: "main", tables: [], lobbyNotes: [], leaseUntil: 0, lastTickAt: null, totalHandsEver: 0, matchmakingCounter: 0 };
     if ((s.arenaState.leaseUntil ?? 0) > Date.now()) return null;
     s.arenaState.leaseUntil = leaseUntil;

@@ -6,7 +6,7 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-Environment=TICK_URL=https://ai-casino-arena.vercel.app/api/tick?t=f1f704897ad6ab4228418245da7d3aa436ebda1a684baccd
+Environment=TICK_URL=https://YOUR-APP.vercel.app/api/tick?t=YOUR_CRON_SECRET
 Environment=POLL_SECONDS=5
 ExecStart=/bin/bash /opt/arena/heartbeat.sh
 Restart=always

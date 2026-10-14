@@ -92,6 +92,7 @@ export interface LiveTable {
   bankrolls: Record<string, number>; // bankroll snapshot when seated
   stints?: Record<string, number>; // hands played at this seat (per stint)
   prevNetBB?: Record<string, number>; // last hand's netBB — innovation baseline for live Elo
+  pendingQuarantine?: string[]; // quarantined mid-hand — cashed out safely at the next boundary
   departed?: SessionSeatResult[]; // players who already left this table
   createdAt: string;
 }
@@ -134,6 +135,7 @@ export interface ArenaRepo {
    * state (with leaseUntil set), or null if the lease is held / on error.
    */
   claimTickLease(leaseUntil: number): Promise<ArenaStateRow | null>;
+  getHand(id: string): Promise<HandRow | null>;
 }
 
 export function blankModel(id: string, name: string, publisher: string): ModelRow {

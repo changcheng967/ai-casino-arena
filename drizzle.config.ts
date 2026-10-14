@@ -5,6 +5,10 @@ export default defineConfig({
   schema: "./db/schema.ts",
   out: "./drizzle",
   dbCredentials: {
-    url: process.env.DATABASE_URL!,
+    url: (() => {
+      const u = process.env.DATABASE_URL;
+      if (!u) throw new Error("DATABASE_URL is not set — add it to .env.local or the environment");
+      return u;
+    })(),
   },
 });

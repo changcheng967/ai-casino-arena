@@ -28,6 +28,7 @@ export function cardParts(card: number): { rank: string; suit: string; glyph: st
 export function timeAgo(iso: string | number | null): string {
   if (!iso) return "—";
   const t = typeof iso === "number" ? iso : Date.parse(iso);
+  if (!Number.isFinite(t)) return "—";
   const s = Math.max(0, Math.floor((Date.now() - t) / 1000));
   if (s < 60) return `${s}s ago`;
   if (s < 3600) return `${Math.floor(s / 60)}m ago`;

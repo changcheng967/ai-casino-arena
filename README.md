@@ -58,36 +58,19 @@ npm test                # poker engine + Elo test suite
 npx tsx scripts/demo.mts  # offline end-to-end validation (no API calls)
 ```
 
-## Deploy to Vercel + Neon + cron-job.org (all free)
+## Deploy to Vercel + Neon (all free)
 
-1. **Neon** (free tier, no credit card): create a project at neon.tech → copy the
-   connection string (`postgresql://…?sslmode=require`).
-2. **Create the schema** from your machine:
-   ```bash
-   DATABASE_URL="postgresql://…" npx drizzle-kit generate && npx drizzle-kit migrate  # (db:push needs a TTY; generate+migrate is the non-interactive path)
-   ```
-3. **Seed the roster into Neon**:
-   ```bash
-   DATABASE_URL="postgresql://…" npm run seed
-   ```
-4. **Vercel** (free Hobby): import this repo/folder → add Environment Variables:
-   - `NVIDIA_API_KEY` = your `nvapi-…` key
-   - `DATABASE_URL` = the Neon string
-   - `CRON_SECRET` = any long random string (e.g. `openssl rand -hex 24`)
-   - Optional extra providers (models from these join the arena too):
-     - `GROQ_API_KEY` = `gsk-…` (Groq Cloud free tier)
-     - `AGNES_API_KEY` = `sk-…` (Agnes AI; only its flash models are free)
-     - `CLINE_API_KEY` = `sk-…` (Cline gateway; ONLY `:free`-tagged models are used)
-     - `OLLAMA_API_KEY` = Ollama Cloud key (only the free `-cloud` models are used)
-5. Deploy. Note the URL, e.g. `https://your-app.vercel.app`.
-6. **cron-job.org** (free): create one job —
-   - URL: `https://your-app.vercel.app/api/tick?t=YOUR_CRON_SECRET`
-   - Schedule: **every 1 minute**
-7. Heartbeat: this repo ships a GitHub Actions workflow (.github/workflows/tick.yml) that pings /api/tick every minute — set the TICK_URL secret (full URL incl. ?t=CRON_SECRET) and it runs 24/7 for free. cron-job.org works as an extra staggered heartbeat.
-8. Done — the arena runs 24/7. Watch at `/watch`, rankings at `/leaderboard`.
+1. **Neon**: create a project at neon.tech → copy the connection string.
+2. **Schema**: `npx drizzle-kit generate && npx drizzle-kit migrate` with `DATABASE_URL` set (`db:push` needs a TTY; generate+migrate is the non-interactive path).
+3. **Seed the roster**: `DATABASE_URL=… npm run probe && npm run seed` (5 providers probed; failed probes never re-route healthy players).
+4. **Vercel** (CLI — git auto-deploy is intentionally NOT used): `vercel login`, `vercel link`, add env vars (`DATABASE_URL`, the 5 provider keys, `CRON_SECRET`), then `vercel deploy --prod --yes`.
+5. **Heartbeat (three layers, all lease-safe)**:
+   - any always-on box running `scripts/heartbeat.sh` via systemd (see `scripts/heartbeat.service`) — polls every 5s, ~98% duty cycle;
+   - cron-job.org pinging `/api/tick?t=CRON_SECRET` every minute;
+   - Vercel's own daily cron via `vercel.json`.
+6. Watch at `/watch`, rankings at `/leaderboard`.
 
-> The `/api/tick` route is protected by `CRON_SECRET` (header `x-cron-secret` or
-> `?t=`) so strangers cannot burn your NVIDIA quota. Local dev skips the check.
+> `/api/tick` accepts `x-cron-secret`, `Authorization: Bearer`, or `?t=`. It responds instantly and advances the arena in the background (waitUntil).
 
 ## How it runs forever on free tiers
 

@@ -533,6 +533,17 @@ async function rotateTable(
   const bb = st.bigBlind;
   let changed = false;
 
+  // 0) deferred mid-hand quarantine exits: the hand has now finished and the
+  // pot was awarded legally — cash them out safely (stack includes winnings)
+  for (const qid of live.pendingQuarantine ?? []) {
+    const idx = st.players.findIndex((x) => x.id === qid);
+    if (idx >= 0) {
+      await cashOutPlayer(repo, modelMap, state, live, idx);
+      report.playersLeft++;
+    }
+  }
+  live.pendingQuarantine = [];
+
   // 1) busted players must leave (stack 0, engine marked them satOut)
   for (let i = st.players.length - 1; i >= 0; i--) {
     const p = st.players[i];
@@ -663,13 +674,18 @@ async function refillSeats(
     if (candidates.length === 0) break;
     {
       const pick = candidates[0];
+      // SYNCHRONOUS claim: pull the candidate off the queue BEFORE the awaited
+      // buy-in call — parallel table lanes (and their refill passes) share this
+      // state within one tick, and claiming after the await let two tables
+      // seat the same model and double-mint their stack
+      state.lobbyQueue = (state.lobbyQueue ?? []).filter((id) => id !== pick.id);
       const r = await askBuyIn(pick, st.smallBlind, bb, live.tierName, 40 * bb, DEFAULT_BUYIN_BBS * bb);
       if (!r.responded) {
         // queue fairness: a model that doesn't answer when its turn comes goes
         // to the BACK of the line — the seat goes to the next working model.
         // Repeated no-answers escalate to quarantine and leave the line.
         await bumpFailures(repo, pick, "did not respond when called from the waiting list");
-        state.lobbyQueue = [...(state.lobbyQueue ?? []).filter((x) => x !== pick.id), pick.id];
+        state.lobbyQueue = [...(state.lobbyQueue ?? []), pick.id];
         if (!state.lobbySince) state.lobbySince = {};
         state.lobbySince[pick.id] = new Date().toISOString(); // re-queued now
         continue;
@@ -696,7 +712,6 @@ async function refillSeats(
       live.bankrolls[pick.id] = pick.bankroll;
       if (!live.stints) live.stints = {};
       live.stints[pick.id] = 0;
-      state.lobbyQueue = (state.lobbyQueue ?? []).filter((id) => id !== pick.id);
       if (state.lobbySince) delete state.lobbySince[pick.id];
       await repo.patchModel(pick.id, { bankroll: pick.bankroll - buyIn, lastSeenAt: new Date().toISOString() });
       modelMap.set(pick.id, { ...pick, bankroll: pick.bankroll - buyIn });
@@ -763,7 +778,7 @@ export async function runTick(repo: ArenaRepo, opts?: { budgetMs?: number }): Pr
   // healthy answer returns them to the lobby queue (auto-rejoin) ----
   const quarantined = models.filter((m) => m.status === "quarantined");
   if (quarantined.length > 0) {
-    const offset = state.matchmakingCounter % quarantined.length;
+    const offset = (state.matchmakingCounter ?? 0) % quarantined.length;
     const picks = [...quarantined.slice(offset), ...quarantined.slice(0, offset)].slice(0, QUARANTINE_PROBES_PER_TICK);
     for (const q of picks) {
       try {
@@ -830,6 +845,11 @@ export async function runTick(repo: ArenaRepo, opts?: { budgetMs?: number }): Pr
     }
   }
 
+  // Everything below runs under a finally: a crash between a persisted
+  // patchModel and the next checkpoint would otherwise leave disk state
+  // pointing at a still-seated player whose bankroll already absorbed the
+  // cash-out — after lease expiry the cash-out would replay and double-credit.
+  try {
   // ---- FILL FIRST: before spending budget on decisions, seat waiting
   // players into every table with open seats. Tables must never sit short
   // while the lobby has players — this pass runs early every tick so seats
@@ -1010,42 +1030,53 @@ export async function runTick(repo: ArenaRepo, opts?: { budgetMs?: number }): Pr
           meModel.avgLatencyMs === 0 &&
           meModel.timeouts >= CLOCK_VIOLATION_MIN &&
           meModel.timeouts % CLOCK_RETRY_EVERY !== 0;
-        const out: DecisionOutcome = clocked
+        let clockedOut: DecisionOutcome | null = clocked
           ? {
               decision: fallbackDecision(la),
               ok: false,
               latencyMs: null,
               error: "clock violation (chronic timeout)",
             }
-          : await askDecision(
-              me.id,
-              me.name,
-              live.state,
-              la,
-              bankroll,
-              meModel?.modelRef ?? me.id,
-              meModel?.provider,
-              // Adaptive timeout (proposal B3): fast models get a tight clock
-              // so one slow seat can't eat the tick; slow ones keep headroom.
-              meModel && meModel.avgLatencyMs > 0
-                ? Math.min(DECISION_TIMEOUT_MS, Math.max(4_000, Math.round(meModel.avgLatencyMs * 3)))
-                : undefined,
-            );
+          : null;
+        if (clocked && clockedOut) {
+          // keep the timeout counter moving so `timeouts % CLOCK_RETRY_EVERY`
+          // eventually reaches the real-API retry (otherwise the model is
+          // clock-folded forever with no recovery path)
+          const cm = modelMap.get(me.id);
+          if (cm) {
+            await repo.patchModel(me.id, { timeouts: cm.timeouts + 1 });
+            modelMap.set(me.id, { ...cm, timeouts: cm.timeouts + 1 });
+          }
+        }
+        const finalOut: DecisionOutcome =
+          clockedOut ?? (await askDecision(
+            me.id,
+            me.name,
+            live.state,
+            la,
+            bankroll,
+            meModel?.modelRef ?? me.id,
+            meModel?.provider,
+            meModel && meModel.avgLatencyMs > 0
+              ? Math.min(DECISION_TIMEOUT_MS, Math.max(4_000, Math.round(meModel.avgLatencyMs * 3)))
+              : undefined,
+          ));
         report.decisions++;
         const before = live.state;
-        const next = apply(before, out.decision as Decision);
-        if (out.talk) attachTalk(next, la.seat, out.talk);
+        const next = apply(before, finalOut.decision as Decision);
+        if (finalOut.talk) attachTalk(next, la.seat, finalOut.talk);
         live.state = next;
         await checkpoint();
         // Health tracking: real provider outages (timeout/network/HTTP — never
         // a synthetic clocked fold) count toward quarantine; any good reply
-        // resets the streak. At the threshold the model cashes out mid-game
-        // and sits in the lobby until a recovery probe succeeds.
+        // resets the streak. At the threshold the model sits out and is cashed
+        // out safely at the next hand boundary until a recovery probe succeeds.
+        const out = finalOut;
         const m = modelMap.get(me.id);
         if (m && !clocked) {
           const isTimeout = out.latencyMs === null;
           const outage = !out.ok && isTimeout;
-          const fails = outage ? m.consecutiveFailures + 1 : 0;
+          const fails = outage ? (m.consecutiveFailures ?? 0) + 1 : 0;
           const wentQuarantined =
             outage && fails >= QUARANTINE_THRESHOLD && m.status === "active";
           if (wentQuarantined) {
@@ -1068,8 +1099,13 @@ export async function runTick(repo: ArenaRepo, opts?: { budgetMs?: number }): Pr
               `${m.name} lost connection at the table and stepped away — rejoins automatically when healthy — ${new Date().toISOString()}`,
             );
             state.lobbyNotes = state.lobbyNotes.slice(0, 40);
-            await cashOutPlayer(repo, modelMap, state, live, la.seat);
-            report.playersLeft++;
+            // CRITICAL FIX: never splice a seat mid-hand — their committed
+            // chips are alive in the pot and finishHand's side-pot walk would
+            // destroy them. Sit them OUT (engine stops asking, betting
+            // completes around them) and cash out at the next hand boundary
+            // where awards have legally settled.
+            live.state.players[la.seat].satOut = true;
+            live.pendingQuarantine = [...(live.pendingQuarantine ?? []), me.id];
           } else {
             await repo.patchModel(me.id, {
               consecutiveFailures: fails,
@@ -1117,14 +1153,36 @@ export async function runTick(repo: ArenaRepo, opts?: { budgetMs?: number }): Pr
 
   await Promise.all(state.tables.map(advanceTable));
 
-  // drop tables that closed during play
-  state.tables = state.tables.filter((t) => t.state.players.length >= 2 && !t.state.sessionOver);
-
-  state.leaseUntil = 0; // release
-  state.lastTickAt = Date.now(); // stamp COMPLETION so "last tick" stays fresh while ticks chain
-  await repo.saveArenaState(state);
+  // drop tables that closed during play — CASH OUT anyone still seated on a
+  // dropped table first (stray stacks would be destroyed with the state), and
+  // never drop a table that is mid-hand (awaiting a decision): it stays until
+  // the hand resolves at a boundary
+  const keepers: LiveTable[] = [];
+  for (const tb of state.tables) {
+    const midHand = tb.state.awaitingDecision;
+    const dead = tb.state.players.length < 2 || tb.state.sessionOver;
+    if (!dead || midHand) {
+      keepers.push(tb);
+      continue;
+    }
+    while (tb.state.players.length > 0) {
+      await cashOutPlayer(repo, modelMap, state, tb, 0);
+      report.playersLeft++;
+    }
+    await syncSessionRow(repo, tb, true);
+    report.tablesClosed++;
+  }
+  state.tables = keepers;
 
   report.ran = true;
   report.ms = Date.now() - startedAt;
   return report;
+  } finally {
+    // best-effort final save + lease release on ANY exit path (crash between a
+    // persisted patchModel and the next checkpoint must not double-credit a
+    // cash-out after lease expiry)
+    state.leaseUntil = 0;
+    state.lastTickAt = Date.now(); // stamp COMPLETION for the live label
+    await repo.saveArenaState(state).catch(() => undefined);
+  }
 }
