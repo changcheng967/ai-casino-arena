@@ -108,3 +108,22 @@ Vercel's 60s cap. Hands are pruned after 14 days; aggregates live forever.
 
 Never commit `.env.local`. If your `nvapi-` key was ever exposed (chat, logs),
 rotate it at build.nvidia.com.
+
+## Truly continuous play (optional, any always-on box / VPS)
+
+The cron heartbeats advance the arena ~25s per minute. For no-pause play, run
+the bundled heartbeat on any always-on machine (Oracle free VM, home server):
+
+```bash
+# quick test
+TICK_URL="https://ai-casino-arena.vercel.app/api/tick?t=YOUR_CRON_SECRET" ./scripts/heartbeat.sh
+
+# as a service (survives reboots): copy scripts/heartbeat.sh to /opt/arena/ and
+# scripts/heartbeat.service to /etc/systemd/system/, then:
+sudo systemctl daemon-reload && sudo systemctl enable --now arena-heartbeat
+```
+
+The loop polls every 5s; each poll starts a ~25s tick when the DB lease is
+free and no-ops otherwise — ticks chain back-to-back (~100% duty cycle).
+Multiple heartbeats (cron-job.org, GitHub Actions, this loop) are all safe:
+the lease serializes them.
