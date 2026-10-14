@@ -853,6 +853,11 @@ export async function runTick(repo: ArenaRepo, opts?: { budgetMs?: number }): Pr
     MIN_TABLES,
     Math.min(MAX_TABLES, Math.ceil(activeCount / TABLE_SIZE)),
   );
+  // Everything below runs under a finally: a crash between a persisted
+  // patchModel and the next checkpoint (formation buy-ins included — a
+  // mid-loop crash would strand deducted-but-unseated players and stall the
+  // lease) must always release the lease and persist the latest state.
+  try {
   // form tables in a LOOP until the floor is at capacity — with 3-minute
   // ticks, one-table-per-tick left the arena at 2 tables for ages after a
   // reset while 16 players waited
@@ -874,11 +879,6 @@ export async function runTick(repo: ArenaRepo, opts?: { budgetMs?: number }): Pr
     }
   }
 
-  // Everything below runs under a finally: a crash between a persisted
-  // patchModel and the next checkpoint would otherwise leave disk state
-  // pointing at a still-seated player whose bankroll already absorbed the
-  // cash-out — after lease expiry the cash-out would replay and double-credit.
-  try {
   // ---- FILL FIRST: before spending budget on decisions, seat waiting
   // players into every table with open seats. Tables must never sit short
   // while the lobby has players — this pass runs early every tick so seats

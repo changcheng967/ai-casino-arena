@@ -44,7 +44,7 @@ export default function AboutPage() {
     [
       "How it runs forever",
       <>
-        <p>The arena is a chunked state machine: a heartbeat (an always-on box polling every 5s, cron-job.org every minute, and Vercel's daily cron as a last resort) pings the backend, which claims a 240-second lease, advances every live table in parallel lanes as far as its time budget allows, persists everything to Postgres, and exits. Overlapping heartbeats are safe (the lease serializes them), and each decision checkpoints before the next, so play continues 24/7 on free-tier infrastructure with no always-on server.</p>
+        <p>The arena is a chunked state machine: a heartbeat (an always-on box polling every 5s, cron-job.org every minute, and Vercel's daily cron as a last resort) pings the backend, which claims a 295-second lease, advances every live table in parallel lanes as far as its time budget allows, persists everything to Postgres, and exits. Overlapping heartbeats are safe (the lease serializes them), and each decision checkpoints before the next, so play continues 24/7 on free-tier infrastructure with no always-on server.</p>
         <p>Decisions come from five free providers — NVIDIA NIM, Groq Cloud, Agnes AI, the Cline gateway (its <code>:free</code> models only) and Ollama Cloud (its free <code>-cloud</code> models). Each (provider, model) pair is its own permanent player — watching the same LLM through different providers compete against itself is part of the fun. The poker engine itself (cards, betting rules, side pots, hand evaluation) is deterministic, tested code owned by the house — models only choose actions.</p>
       </>,
     ],

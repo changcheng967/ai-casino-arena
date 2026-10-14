@@ -10,3 +10,6 @@ data/probe_out*.txt
 .vercel/
 tsconfig.tsbuildinfo
 nimkey.txt
+.env*
+!.env.example
+data/*.bak

@@ -229,9 +229,15 @@ function postBlinds(t: TableState): void {
   if (canFirstAct) {
     t.currentSeat = utgSeat;
     t.awaitingDecision = true;
+  } else {
+    // first actor is all-in from posting (or out): betting is complete.
+    // Resolve NOW — leaving awaitingDecision=false with no lastHandResult
+    // would strand the pot (the caller's startHand would kill the hand).
+    if (live.filter(canAct).length === 0) {
+      runOutBoard(t);
+      finishHand(t);
+    }
   }
-  // else: first actor is all-in from posting (or out) — no decision to make;
-  // betting is complete and the hand resolves as posted
 }
 
 function post(t: TableState, seat: number, amount: number, label: string): void {
