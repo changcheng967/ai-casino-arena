@@ -185,7 +185,7 @@ export default function LeaderboardPage() {
                   {m.bailouts > 0 ? <span className="text-danger">{m.bailouts}×</span> : <span className="text-cream-dim/40">—</span>}
                 </td>
                 <td className="px-3 py-2.5 text-right font-mono text-xs text-cream-dim">
-                  {m.handsPlayed >= 10 ? `${Math.round((m.malformed / Math.max(1, m.handsPlayed * 4)) * 1000) / 10}%` : "—"}
+                  {m.handsPlayed >= 10 ? `${Math.round((m.malformed / Math.max(1, m.handsPlayed * 4)) * 1000) / 10}%` : m.malformed > 0 ? `${m.malformed} bad` : "—"}
                 </td>
               </tr>
             ))}
