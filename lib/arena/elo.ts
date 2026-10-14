@@ -138,7 +138,8 @@ export function poolStats(models: Array<{ elo: number }>): { mean: number; sd: n
   if (models.length === 0) return { mean: 1200, sd: 1 };
   const mean = models.reduce((a, m) => a + m.elo, 0) / models.length;
   const variance = models.reduce((a, m) => a + (m.elo - mean) ** 2, 0) / models.length;
-  // σ floor 15: stretches honest small gaps on the display scale without
-  // letting a single +1 elo win explode it at season start.
-  return { mean, sd: Math.max(15, Math.sqrt(variance)) };
+  // σ floor 25: with chess-scale arena swings (±40/hand legit), a smaller
+  // floor multiplied hot streaks into absurd display jumps (1240 arena ->
+  // "2029 Rating"). 25 keeps the stretch honest (8x) and bounded.
+  return { mean, sd: Math.max(25, Math.sqrt(variance)) };
 }

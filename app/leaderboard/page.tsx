@@ -16,6 +16,9 @@ interface Row {
   rating?: number;
   elo: number;
   bankroll: number;
+  inPlay?: number;
+  totalWealth?: number;
+  lastDelta?: number | null;
   bailouts: number;
   sessions: number;
   handsPlayed: number;
@@ -30,17 +33,27 @@ interface Row {
   probeLatencyMs: number | null;
 }
 
-type SortKey = "rank" | "elo" | "bankroll" | "netProfit" | "handsPlayed" | "bailouts";
+type SortKey =
+  | "rank"
+  | "rating"
+  | "elo"
+  | "totalWealth"
+  | "netProfit"
+  | "handsPlayed"
+  | "vpip"
+  | "bailouts"
+  | "malformed";
 
 export default function LeaderboardPage() {
   const [rows, setRows] = useState<Row[]>([]);
   const [sort, setSort] = useState<SortKey>("rank");
+  const [dir, setDir] = useState<1 | -1>(1); // 1 = best first, -1 = worst first
   const [q, setQ] = useState("");
   const [showAll, setShowAll] = useState(false);
 
   useEffect(() => {
     const load = async () => {
-      const res = await fetch("/api/leaderboard", { cache: "no-store" });
+      const res = await fetch(`/api/leaderboard?t=${Date.now()}`, { cache: "no-store" });
       setRows((await res.json()).models ?? []);
     };
     void load();
@@ -56,19 +69,44 @@ export default function LeaderboardPage() {
       const s = q.toLowerCase();
       r = r.filter((x) => x.id.toLowerCase().includes(s) || x.publisher.toLowerCase().includes(s));
     }
-    if (sort !== "rank") r = [...r].sort((a, b) => (b[sort] as number) - (a[sort] as number));
+    if (sort !== "rank") {
+      const val = (x: Row): number => {
+        switch (sort) {
+          case "rating":
+            return x.rating ?? x.elo;
+          case "totalWealth":
+            return x.totalWealth ?? x.bankroll;
+          case "vpip":
+            return x.vpip ?? -1;
+          default:
+            return x[sort] as number;
+        }
+      };
+      r = [...r].sort((a, b) => dir * (val(b) - val(a)));
+    }
     return r;
-  }, [rows, sort, q, showAll]);
+  }, [rows, sort, dir, q, showAll]);
 
   const th = (key: SortKey, label: string, cls = "") => (
     <th
-      onClick={() => setSort(key)}
+      onClick={() => {
+        if (sort === key) {
+          if (dir === 1) setDir(-1);
+          else {
+            setSort("rank");
+            setDir(1);
+          }
+        } else {
+          setSort(key);
+          setDir(1);
+        }
+      }}
       className={`cursor-pointer select-none px-3 py-2.5 text-right font-mono text-[10px] font-semibold uppercase tracking-wider transition-colors hover:text-gold-300 ${
         sort === key ? "text-gold-300" : "text-cream-dim/70"
       } ${cls}`}
     >
       {label}
-      {sort === key ? " ▾" : ""}
+      {sort === key ? (dir === 1 ? " ▾" : " ▴") : ""}
     </th>
   );
 
@@ -102,13 +140,13 @@ export default function LeaderboardPage() {
               {th("rank", "#", "!text-left")}
               <th className="px-3 py-2.5 text-left font-mono text-[10px] uppercase tracking-wider text-cream-dim/70">Model</th>
               {th("elo", "Rating")}
-              <th className="px-3 py-2.5 text-right font-mono text-[10px] uppercase tracking-wider text-cream-dim/50">Arena Elo</th>
-              {th("bankroll", "Wealth")}
+              {th("elo", "Arena Elo")}
+              {th("totalWealth", "Wealth")}
               {th("netProfit", "Net profit")}
               {th("handsPlayed", "Hands")}
-              <th className="px-3 py-2.5 text-right font-mono text-[10px] uppercase tracking-wider text-cream-dim/70">VPIP/PFR</th>
+              {th("vpip", "VPIP/PFR")}
               {th("bailouts", "Bailouts")}
-              <th className="px-3 py-2.5 text-right font-mono text-[10px] uppercase tracking-wider text-cream-dim/70">Malformed</th>
+              {th("malformed", "Malformed")}
             </tr>
           </thead>
           <tbody>

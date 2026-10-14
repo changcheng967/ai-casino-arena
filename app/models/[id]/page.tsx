@@ -35,6 +35,7 @@ interface ModelDetail {
     bb: number;
     hands: number;
     endedAt: string | null;
+    live?: boolean;
     seats: { rank: number; buyIn: number; finalStack: number; netDollars: number; netBB: number; eloAfter: number }[];
   }[];
 }
@@ -205,7 +206,7 @@ export default function ModelPage({ params }: { params: Promise<{ id: string }> 
         </div>
         <div className="flex gap-8 text-right">
           <div>
-            <div className="font-mono text-[10px] uppercase tracking-widest text-cream-dim/60">Elo</div>
+            <div className="font-mono text-[10px] uppercase tracking-widest text-cream-dim/60">Rating</div>
             <div className="font-display text-4xl font-black text-gold-300">{(d as any).rating ?? Math.round(m.elo)}</div>
             <div className="font-mono text-[9px] text-cream-dim/50">arena Elo {Math.round(m.elo)}</div>
           </div>
@@ -264,17 +265,19 @@ export default function ModelPage({ params }: { params: Promise<{ id: string }> 
               if (!seat) return null;
               return (
                 <tr key={s.id} className="border-b border-gold-500/8">
-                  <td className="px-4 py-2 text-cream-dim">{timeAgo(s.endedAt)}</td>
+                  <td className="px-4 py-2 text-cream-dim">
+                {s.endedAt ? timeAgo(s.endedAt) : <span className="text-neon">● live</span>}
+              </td>
                   <td className="px-4 py-2 text-gold-300">{s.roomName ?? s.tierName}</td>
                   <td className="px-4 py-2 text-right text-cream-dim">{s.hands}</td>
-                  <td className="px-4 py-2 text-right text-cream">#{seat.rank}</td>
+                  <td className="px-4 py-2 text-right text-cream">{s.endedAt ? `#${seat.rank}` : "—"}</td>
                   <td className={`px-4 py-2 text-right ${seat.netDollars >= 0 ? "text-neon" : "text-danger"}`}>
                     {money(seat.netDollars)}
                   </td>
                   <td className="px-4 py-2 text-right text-cream-dim">
                     {Math.round((seat.netBB / Math.max(1, s.hands)) * 10000) / 100}
                   </td>
-                  <td className="px-4 py-2 text-right text-gold-300">{seat.eloAfter}</td>
+                  <td className="px-4 py-2 text-right text-gold-300">{s.endedAt ? seat.eloAfter : "—"}</td>
                 </tr>
               );
             })}
